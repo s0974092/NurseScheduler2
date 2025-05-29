@@ -8,7 +8,65 @@
 <body>
 <div class="container mt-5">
     <h2>班表查詢</h2>
-    <p>（功能開發中）</p>
+    <form method="post" class="row g-3 mb-3" id="searchForm">
+        <div class="col-md-2">
+            <input type="date" class="form-control" name="date" value="{{ filters.date }}" placeholder="日期">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="shift_name" value="{{ filters.shift_name }}" placeholder="班別名稱">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="ward" value="{{ filters.ward }}" placeholder="病房">
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="staff_name" value="{{ filters.staff_name }}" placeholder="員工姓名">
+        </div>
+        <div class="col-md-2 d-flex align-items-center">
+            <button type="submit" class="btn btn-primary me-2">搜尋</button>
+            <a href="/view_schedule" class="btn btn-secondary me-2">清除</a>
+            <button type="button" class="btn btn-success" onclick="exportCSV()">匯出CSV</button>
+        </div>
+    </form>
+    <form id="exportForm" method="post" action="/export_schedule" style="display:none;"></form>
+    <script>
+    function exportCSV() {
+        // 將搜尋表單的資料複製到匯出表單
+        var searchForm = document.getElementById('searchForm');
+        var exportForm = document.getElementById('exportForm');
+        exportForm.innerHTML = '';
+        for (var i = 0; i < searchForm.elements.length; i++) {
+            var el = searchForm.elements[i];
+            if (el.name && el.value !== undefined) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = el.name;
+                input.value = el.value;
+                exportForm.appendChild(input);
+            }
+        }
+        exportForm.submit();
+    }
+    </script>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>日期</th>
+                <th>班別</th>
+                <th>病房</th>
+                <th>人員</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in schedule %}
+            <tr>
+                <td>{{ row.date }}</td>
+                <td>{{ row.shift_name }}</td>
+                <td>{{ row.ward }}</td>
+                <td>{{ row.staff_name }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
     <a href="/" class="btn btn-secondary mt-3">回首頁</a>
 </div>
 </body>

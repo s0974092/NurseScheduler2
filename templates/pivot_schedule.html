@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>班表樞紐分析</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.css">
+    <style>
+        body { background: #f8f9fa; }
+    </style>
+</head>
+<body>
+<div class="container-fluid mt-3">
+    <div id="output" style="background:white;"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.zh.js"></script>
+<script>
+$(function(){
+    var data = {{ data|tojson }};
+    $("#output").pivotUI(
+        data,
+        {
+            rows: ["date"],
+            cols: ["shift_name"],
+            aggregatorName: "計數",
+            rendererName: "表格",
+            renderers: $.pivotUtilities.renderers
+        },
+        true,
+        "zh"
+    );
+});
+</script>
+</body>
+</html> 

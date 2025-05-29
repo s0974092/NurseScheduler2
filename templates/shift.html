@@ -8,8 +8,140 @@
 <body>
 <div class="container mt-5">
     <h2>班別設定</h2>
-    <p>（功能開發中）</p>
+    <div class="mb-3 d-flex justify-content-between">
+        <a href="/download_shift_template" class="btn btn-success">範本下載</a>
+        <form class="d-flex" method="post" action="/upload_shift" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".csv" class="form-control me-2" required>
+            <button type="submit" class="btn btn-primary">批次上傳</button>
+        </form>
+    </div>
+    <form class="row g-3" method="post" action="/add_shift" id="shiftForm">
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="shift_id" placeholder="班別編號" required>
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="name" placeholder="班別名稱" required>
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="ward" placeholder="病房" required>
+        </div>
+        <div class="col-md-3">
+            <div class="input-group">
+                <input type="text" class="form-control" name="time" id="timeInput" placeholder="上班時間 (如08:00-16:00)" readonly required>
+                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#timeModal">選擇時段</button>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <input type="number" class="form-control" name="required_count" placeholder="所需人數" min="1" required>
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary">新增班別</button>
+        </div>
+    </form>
+    <!-- Modal for time selection -->
+    <div class="modal fade" id="timeModal" tabindex="-1" aria-labelledby="timeModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="timeModalLabel">選擇上班時段</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row mb-3">
+              <div class="col">
+                <label>開始時段</label>
+                <input type="time" class="form-control" id="startTime">
+              </div>
+              <div class="col">
+                <label>結束時段</label>
+                <input type="time" class="form-control" id="endTime">
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-primary" id="setTimeBtn" data-bs-dismiss="modal">確定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>班別編號</th>
+                <th>班別名稱</th>
+                <th>病房</th>
+                <th>上班時間</th>
+                <th>所需人數</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for shift in shift_list %}
+            <tr>
+                <td>{{ shift.shift_id }}</td>
+                <td>{{ shift.name }}</td>
+                <td>{{ shift.ward }}</td>
+                <td>{{ shift.time }}</td>
+                <td>{{ shift.required_count }}</td>
+                <td>
+                    <form method="post" action="/delete_shift" style="display:inline;">
+                        <input type="hidden" name="shift_id" value="{{ shift.shift_id }}">
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('確定要刪除嗎？');">刪除</button>
+                    </form>
+                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ shift.shift_id }}">編輯</button>
+                    <!-- 編輯 Modal -->
+                    <div class="modal fade" id="editModal{{ shift.shift_id }}" tabindex="-1" aria-labelledby="editModalLabel{{ shift.shift_id }}" aria-hidden="true">
+                      <div class="modal-dialog">
+                        <div class="modal-content">
+                          <form method="post" action="/edit_shift">
+                            <div class="modal-header">
+                              <h5 class="modal-title" id="editModalLabel{{ shift.shift_id }}">編輯班別</h5>
+                              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                              <input type="hidden" name="shift_id" value="{{ shift.shift_id }}">
+                              <div class="mb-3">
+                                <label class="form-label">班別名稱</label>
+                                <input type="text" class="form-control" name="name" value="{{ shift.name }}" required>
+                              </div>
+                              <div class="mb-3">
+                                <label class="form-label">病房</label>
+                                <input type="text" class="form-control" name="ward" value="{{ shift.ward }}" required>
+                              </div>
+                              <div class="mb-3">
+                                <label class="form-label">上班時間</label>
+                                <input type="text" class="form-control" name="time" value="{{ shift.time }}" required>
+                              </div>
+                              <div class="mb-3">
+                                <label class="form-label">所需人數</label>
+                                <input type="number" class="form-control" name="required_count" value="{{ shift.required_count }}" min="1" required>
+                              </div>
+                            </div>
+                            <div class="modal-footer">
+                              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                              <button type="submit" class="btn btn-primary">儲存變更</button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
     <a href="/" class="btn btn-secondary mt-3">回首頁</a>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.getElementById('setTimeBtn').onclick = function() {
+    var start = document.getElementById('startTime').value;
+    var end = document.getElementById('endTime').value;
+    if (start && end) {
+        document.getElementById('timeInput').value = start + '-' + end;
+    }
+};
+</script>
 </body>
 </html> 
