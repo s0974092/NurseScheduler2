@@ -200,8 +200,9 @@ def download_shift_template():
     si = StringIO()
     writer = csv.writer(si)
     writer.writerow(['shift_id', 'name', 'time', 'required_count', 'ward'])
-    writer.writerow(['S1', '早班', '08:00-16:00', '3', 'A病房'])
-    writer.writerow(['S2', '晚班', '16:00-00:00', '2', 'B病房'])
+    writer.writerow(['S1', '早班', '07:00-15:00', '3', 'A病房'])
+    writer.writerow(['S2', '小夜班', '15:00-23:00', '2', 'B病房'])
+    writer.writerow(['S3', '大夜班', '23:00-07:00', '1', 'C病房'])
     output = si.getvalue().encode('utf-8-sig')
     return send_file(
         BytesIO(output),
@@ -281,7 +282,7 @@ def auto_schedule():
         for shift in shifts:
             required = int(shift['required_count'])
             ward = shift['ward']
-            is_night = '夜' in shift['name']
+            is_night = '大夜' in shift['name']
             available_staff = [s for s in staff_list if s['ward'] == ward]
             candidates = []
             for s in available_staff:
@@ -300,7 +301,7 @@ def auto_schedule():
                 # 每月班數上限
                 if st['count'] >= max_per_month:
                     continue
-                # 夜班限制
+                # 大夜班限制
                 if is_night:
                     if st['night_count'] >= max_night_per_month:
                         continue
@@ -363,7 +364,7 @@ def auto_schedule():
                 st['last_date'] = date
                 st['last_worked'] = True
                 st['today'] = date
-                # 夜班統計
+                # 大夜班統計
                 if is_night:
                     st['night_count'] += 1
                     if st['last_night_worked'] and st['last_night_date']:

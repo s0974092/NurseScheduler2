@@ -57,6 +57,7 @@
                 <th>班別</th>
                 <th>病房</th>
                 <th>人員</th>
+                <th>工時</th>
             </tr>
         </thead>
         <tbody>
@@ -66,6 +67,7 @@
                 <td>{{ row.shift_name }}</td>
                 <td>{{ row.ward }}</td>
                 <td>{% if row.staff_name == '缺人值班' %}<span style="color:#dc3545;font-weight:bold;">缺人值班</span>{% else %}{{ row.staff_name }}{% endif %}</td>
+                <td>8</td>
             </tr>
         {% endfor %}
         </tbody>
