@@ -8,11 +8,25 @@
 <body>
 <div class="container mt-5">
     <h2>班別設定</h2>
-    <div class="mb-3 d-flex justify-content-between">
+    <div class="mb-3 d-flex gap-2">
         <a href="/download_shift_template" class="btn btn-success">範本下載</a>
-        <form class="d-flex" method="post" action="/upload_shift" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".csv" class="form-control me-2" required>
-            <button type="submit" class="btn btn-primary">批次上傳</button>
+        <form id="uploadForm" method="post" action="/upload_shift" enctype="multipart/form-data">
+            <input type="file" id="uploadInput" name="file" accept=".csv" style="display:none;" required>
+            <button type="button" class="btn btn-primary" id="uploadBtn">批次上傳</button>
+        </form>
+    </div>
+    <div class="alert alert-warning mb-3">
+        <b>篩選搜尋</b>
+        <form class="row g-3 mt-2" id="shiftFilterForm" oninput="filterShifts()">
+            <div class="col-md-3">
+                <input type="text" class="form-control" id="filterName" placeholder="班別名稱">
+            </div>
+            <div class="col-md-3">
+                <input type="text" class="form-control" id="filterWard" placeholder="病房">
+            </div>
+            <div class="col-md-3">
+                <input type="text" class="form-control" id="filterTime" placeholder="上班時間">
+            </div>
         </form>
     </div>
     <form class="row g-3" method="post" action="/add_shift" id="shiftForm">
@@ -20,7 +34,11 @@
             <input type="text" class="form-control" name="shift_id" placeholder="班別編號" required>
         </div>
         <div class="col-md-2">
-            <input type="text" class="form-control" name="name" placeholder="班別名稱" required>
+            <select class="form-select" name="name" required>
+                <option value="早班">早班</option>
+                <option value="晚班">晚班</option>
+                <option value="夜班">夜班</option>
+            </select>
         </div>
         <div class="col-md-2">
             <input type="text" class="form-control" name="ward" placeholder="病房" required>
@@ -65,7 +83,7 @@
         </div>
       </div>
     </div>
-    <table class="table table-bordered mt-3">
+    <table class="table table-bordered mt-3" id="shiftTable">
         <thead>
             <tr>
                 <th>班別編號</th>
@@ -103,7 +121,11 @@
                               <input type="hidden" name="shift_id" value="{{ shift.shift_id }}">
                               <div class="mb-3">
                                 <label class="form-label">班別名稱</label>
-                                <input type="text" class="form-control" name="name" value="{{ shift.name }}" required>
+                                <select class="form-select" name="name" required>
+                                  <option value="早班" {% if shift.name == '早班' %}selected{% endif %}>早班</option>
+                                  <option value="晚班" {% if shift.name == '晚班' %}selected{% endif %}>晚班</option>
+                                  <option value="夜班" {% if shift.name == '夜班' %}selected{% endif %}>夜班</option>
+                                </select>
                               </div>
                               <div class="mb-3">
                                 <label class="form-label">病房</label>
@@ -142,6 +164,32 @@ document.getElementById('setTimeBtn').onclick = function() {
         document.getElementById('timeInput').value = start + '-' + end;
     }
 };
+
+document.getElementById('uploadBtn').onclick = function() {
+    document.getElementById('uploadInput').click();
+};
+document.getElementById('uploadInput').onchange = function() {
+    if(this.files.length > 0) {
+        document.getElementById('uploadForm').submit();
+    }
+};
+
+function filterShifts() {
+    var name = document.getElementById('filterName').value.toLowerCase();
+    var ward = document.getElementById('filterWard').value.toLowerCase();
+    var time = document.getElementById('filterTime').value.toLowerCase();
+    var table = document.getElementById('shiftTable');
+    var trs = table.getElementsByTagName('tr');
+    for (var i = 1; i < trs.length; i++) {
+        var tds = trs[i].getElementsByTagName('td');
+        if (tds.length < 4) continue;
+        var match = true;
+        if (name && tds[1].textContent.toLowerCase().indexOf(name) === -1) match = false;
+        if (ward && tds[2].textContent.toLowerCase().indexOf(ward) === -1) match = false;
+        if (time && tds[3].textContent.toLowerCase().indexOf(time) === -1) match = false;
+        trs[i].style.display = match ? '' : 'none';
+    }
+}
 </script>
 </body>
 </html> 

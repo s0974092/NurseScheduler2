@@ -6,6 +6,7 @@ from io import StringIO, BytesIO
 import sqlite3
 import random
 from datetime import datetime, timedelta
+from calendar import monthrange
 
 app = Flask(__name__)
 
@@ -45,7 +46,10 @@ def shift():
 
 @app.route('/schedule')
 def schedule():
-    return render_template('schedule.html')
+    # 預設本月 yyyy-mm
+    today = datetime.today()
+    default_month = today.strftime('%Y-%m')
+    return render_template('schedule.html', default_month=default_month)
 
 @app.route('/view_schedule', methods=['GET', 'POST'])
 def view_schedule():
@@ -56,10 +60,11 @@ def view_schedule():
         'staff_name': ''
     }
     query = '''
-        SELECT schedule.date, shift.name as shift_name, shift.ward as ward, staff.name as staff_name
+        SELECT schedule.date, shift.name as shift_name, shift.ward as ward, 
+               COALESCE(staff.name, '缺人值班') as staff_name, staff.staff_id
         FROM schedule
         JOIN shift ON schedule.shift_id = shift.shift_id
-        JOIN staff ON schedule.staff_id = staff.staff_id
+        LEFT JOIN staff ON schedule.staff_id = staff.staff_id
         WHERE 1=1
     '''
     params = []
@@ -83,8 +88,26 @@ def view_schedule():
     query += ' ORDER BY schedule.date, shift.name'
     conn = get_db_connection()
     schedule = conn.execute(query, params).fetchall()
+    # 計算本月班數統計
+    staff_stats = []
+    if schedule:
+        # 取出本月
+        first_date = schedule[0]['date']
+        month = first_date[:7]  # yyyy-mm
+        staff_count = {}
+        staff_name_map = {}
+        for row in schedule:
+            if row['date'][:7] == month:
+                sid = row['staff_id']
+                if sid is None:
+                    continue
+                staff_count[sid] = staff_count.get(sid, 0) + 1
+                staff_name_map[sid] = row['staff_name']
+        for sid, count in staff_count.items():
+            staff_stats.append({'staff_id': sid, 'name': staff_name_map[sid], 'count': count})
+        staff_stats.sort(key=lambda x: x['staff_id'])
     conn.close()
-    return render_template('view_schedule.html', schedule=schedule, filters=filters)
+    return render_template('view_schedule.html', schedule=schedule, filters=filters, staff_stats=staff_stats)
 
 @app.route('/add_staff', methods=['POST'])
 def add_staff():
@@ -230,58 +253,105 @@ def delete_shift():
 
 @app.route('/auto_schedule', methods=['POST'])
 def auto_schedule():
-    today = datetime.today().date()
-    dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
+    # 取得使用者選擇的月份與排班參數
+    month = request.form.get('month')
+    max_per_day = int(request.form.get('max_per_day', 1))
+    max_consecutive = int(request.form.get('max_consecutive', 5))
+    min_per_month = int(request.form.get('min_per_month', 22))
+    max_per_month = int(request.form.get('max_per_month', 30))
+    max_night_consecutive = int(request.form.get('max_night_consecutive', 2))
+    max_night_per_month = int(request.form.get('max_night_per_month', 8))
+    auto_fill_missing = request.form.get('auto_fill_missing', 'yes') == 'yes'
+    fair_distribution = request.form.get('fair_distribution', 'yes') == 'yes'
+    special_preference = request.form.get('special_preference', 'no') == 'yes'
+    if not month:
+        today = datetime.today()
+        month = today.strftime('%Y-%m')
+    year, mon = map(int, month.split('-'))
+    days_in_month = monthrange(year, mon)[1]
+    dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
     conn = get_db_connection()
     shifts = conn.execute('SELECT * FROM shift').fetchall()
     staff = conn.execute('SELECT * FROM staff').fetchall()
     staff_list = [dict(s) for s in staff]
-    # 初始化每人本月已排班數與連續上班天數
-    staff_status = {s['staff_id']: {'count': 0, 'consecutive': 0, 'last_date': None, 'last_worked': False, 'shift_counts': {}} for s in staff_list}
+    # 初始化每人本月已排班數與連續上班天數、夜班統計
+    staff_status = {s['staff_id']: {'count': 0, 'consecutive': 0, 'last_date': None, 'last_worked': False, 'shift_counts': {}, 'night_count': 0, 'night_consecutive': 0, 'last_night_date': None, 'last_night_worked': False} for s in staff_list}
     conn.execute('DELETE FROM schedule')
     for date in dates:
-        # 依病房分組排班
         for shift in shifts:
             required = int(shift['required_count'])
             ward = shift['ward']
-            # 篩選同病房人員
+            is_night = '夜' in shift['name']
             available_staff = [s for s in staff_list if s['ward'] == ward]
-            # 篩選符合規則的人員
             candidates = []
             for s in available_staff:
                 st = staff_status[s['staff_id']]
-                # 檢查本日是否已排班
                 if st.get('today', '') == date:
                     continue
-                # 檢查連續上班天數
+                # 每日最多班數
+                if st['shift_counts'].get(date, 0) >= max_per_day:
+                    continue
+                # 連續上班天數
                 if st['last_worked'] and st['last_date']:
                     last = datetime.strptime(st['last_date'], '%Y-%m-%d').date()
                     if (datetime.strptime(date, '%Y-%m-%d').date() - last).days == 1:
-                        if st['consecutive'] >= 5:
+                        if st['consecutive'] >= max_consecutive:
                             continue
-                # 檢查本月班數
-                if st['count'] >= 30:
+                # 每月班數上限
+                if st['count'] >= max_per_month:
                     continue
-                # 檢查班別公平分配
+                # 夜班限制
+                if is_night:
+                    if st['night_count'] >= max_night_per_month:
+                        continue
+                    if st['last_night_worked'] and st['last_night_date']:
+                        last_night = datetime.strptime(st['last_night_date'], '%Y-%m-%d').date()
+                        if (datetime.strptime(date, '%Y-%m-%d').date() - last_night).days == 1:
+                            if st['night_consecutive'] >= max_night_consecutive:
+                                continue
+                # --- 新增班別間最小間隔11小時 ---
+                # 需有上一次排班資訊
+                if st['last_date'] and st['last_worked']:
+                    last_date = st['last_date']
+                    # 找出上一次班別的下班時間
+                    last_shift_id = None
+                    for sh in shifts:
+                        if sh['shift_id'] in st['shift_counts'] and sh['shift_id'] != shift['shift_id']:
+                            if sh['ward'] == ward:
+                                last_shift_id = sh['shift_id']
+                    if last_shift_id:
+                        # 取得上一次班別的時間
+                        last_shift = next((sh for sh in shifts if sh['shift_id'] == last_shift_id), None)
+                        if last_shift:
+                            try:
+                                last_end = last_shift['time'].split('-')[1]
+                                last_end_dt = datetime.strptime(f"{last_date} {last_end}", "%Y-%m-%d %H:%M")
+                                this_start = shift['time'].split('-')[0]
+                                this_start_dt = datetime.strptime(f"{date} {this_start}", "%Y-%m-%d %H:%M")
+                                # 若間隔小於11小時則跳過
+                                if (this_start_dt - last_end_dt).total_seconds() < 11*3600:
+                                    continue
+                            except Exception:
+                                pass
                 shift_count = st['shift_counts'].get(shift['shift_id'], 0)
                 candidates.append((s, st['count'], shift_count))
-            # 依本月班數、該班班數排序，優先分配班數少的人
-            candidates.sort(key=lambda x: (x[1], x[2]))
+            # 公平分配：優先排班數少、該班別少的人
+            if fair_distribution:
+                candidates.sort(key=lambda x: (x[1], x[2]))
+            else:
+                random.shuffle(candidates)
             assigned = []
-            used_ids = set()
             for c in candidates:
                 if len(assigned) >= required:
                     break
                 s = c[0]
                 st = staff_status[s['staff_id']]
-                # 檢查本日是否已排班
                 if st.get('today', '') == date:
                     continue
                 assigned.append(s)
-                used_ids.add(s['staff_id'])
-                # 更新狀態
                 st['count'] += 1
                 st['shift_counts'][shift['shift_id']] = st['shift_counts'].get(shift['shift_id'], 0) + 1
+                st['shift_counts'][date] = st['shift_counts'].get(date, 0) + 1
                 if st['last_worked'] and st['last_date']:
                     last = datetime.strptime(st['last_date'], '%Y-%m-%d').date()
                     if (datetime.strptime(date, '%Y-%m-%d').date() - last).days == 1:
@@ -293,17 +363,32 @@ def auto_schedule():
                 st['last_date'] = date
                 st['last_worked'] = True
                 st['today'] = date
-            # 若人力不足，自動填入缺人值班
+                # 夜班統計
+                if is_night:
+                    st['night_count'] += 1
+                    if st['last_night_worked'] and st['last_night_date']:
+                        last_night = datetime.strptime(st['last_night_date'], '%Y-%m-%d').date()
+                        if (datetime.strptime(date, '%Y-%m-%d').date() - last_night).days == 1:
+                            st['night_consecutive'] += 1
+                        else:
+                            st['night_consecutive'] = 1
+                    else:
+                        st['night_consecutive'] = 1
+                    st['last_night_date'] = date
+                    st['last_night_worked'] = True
+                else:
+                    st['night_consecutive'] = 0
+                    st['last_night_worked'] = False
             for s in assigned:
                 conn.execute('INSERT INTO schedule (date, shift_id, staff_id) VALUES (?, ?, ?)', (date, shift['shift_id'], s['staff_id']))
-            for _ in range(required - len(assigned)):
-                conn.execute('INSERT INTO schedule (date, shift_id, staff_id) VALUES (?, ?, ?)', (date, shift['shift_id'], '缺人值班'))
-        # 每天結束，重設每人今日排班狀態
+            if auto_fill_missing:
+                for _ in range(required - len(assigned)):
+                    conn.execute('INSERT INTO schedule (date, shift_id, staff_id) VALUES (?, ?, ?)', (date, shift['shift_id'], '缺人值班'))
         for st in staff_status.values():
             st['today'] = ''
     conn.commit()
     conn.close()
-    return redirect(url_for('view_schedule'))
+    return redirect(url_for('calendar_view', month=month))
 
 @app.route('/export_schedule', methods=['POST'])
 def export_schedule():
@@ -363,6 +448,37 @@ def pivot_schedule():
     # 轉成list of dicts
     data = [dict(row) for row in schedule]
     return render_template('pivot_schedule.html', data=data)
+
+@app.route('/calendar_view')
+def calendar_view():
+    # 取得本月
+    today = datetime.today()
+    month = request.args.get('month', today.strftime('%Y-%m'))
+    year, mon = map(int, month.split('-'))
+    days_in_month = monthrange(year, mon)[1]
+    conn = get_db_connection()
+    schedule = conn.execute('''
+        SELECT schedule.date, shift.name as shift_name, shift.ward as ward,
+               COALESCE(staff.name, '缺人值班') as staff_name
+        FROM schedule
+        JOIN shift ON schedule.shift_id = shift.shift_id
+        LEFT JOIN staff ON schedule.staff_id = staff.staff_id
+        WHERE schedule.date BETWEEN ? AND ?
+        ORDER BY schedule.date, shift.name
+    ''', (f"{year}-{mon:02d}-01", f"{year}-{mon:02d}-{days_in_month:02d}")).fetchall()
+    conn.close()
+    # 轉換為 FullCalendar events 格式
+    events = []
+    for row in schedule:
+        event = {
+            'title': f"{row['shift_name']} - {row['staff_name']}",
+            'start': row['date'],
+            'description': f"病房: {row['ward']}"
+        }
+        if row['staff_name'] == '缺人值班':
+            event['className'] = ['fc-missing']
+        events.append(event)
+    return render_template('calendar_view.html', month=month, events=events)
 
 if __name__ == '__main__':
     app.run(debug=True) 

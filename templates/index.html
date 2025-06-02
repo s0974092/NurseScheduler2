@@ -4,32 +4,47 @@
     <meta charset="UTF-8">
     <title>護理人員排班系統</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-</head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        body { background: #f6fff7; }
+        .main-card {
+            max-width: 520px;
+            margin: 60px auto;
+            border-radius: 18px;
+            box-shadow: 0 4px 24px rgba(60,180,80,0.10);
+            border: 1.5px solid #b6e2c1;
+        }
+        .main-title {
+            color: #2e7d32;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        .btn-green {
+            background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%);
+            color: #fff;
+            border: none;
+        }
+        .btn-green:hover {
+            background: linear-gradient(90deg, #38f9d7 0%, #43e97b 100%);
+            color: #fff;
+        }
+    </style>
+  </head>
 <body>
-<div class="container mt-5">
-    <h1 class="mb-4">護理人員排班系統</h1>
-    <ul class="list-group">
-        <li class="list-group-item"><a href="{{ url_for('staff') }}">人員管理</a></li>
-        <li class="list-group-item"><a href="{{ url_for('shift') }}">班別設定</a></li>
-        <li class="list-group-item"><a href="{{ url_for('schedule') }}">自動排班</a></li>
-        <li class="list-group-item"><a href="{{ url_for('view_schedule') }}">班表查詢</a></li>
-        <li class="list-group-item"><a href="#" data-bs-toggle="modal" data-bs-target="#pivotModal">班表分析</a></li>
-    </ul>
-</div>
-<!-- Modal for Pivot Table -->
-<div class="modal fade" id="pivotModal" tabindex="-1" aria-labelledby="pivotModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="pivotModalLabel">班表樞紐分析</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <iframe src="/pivot_schedule" width="100%" height="600" style="border:none;"></iframe>
-      </div>
+  <div class="container">
+    <div class="card main-card mt-5">
+        <div class="card-body p-4">
+            <h1 class="main-title text-center mb-4">
+                <i class="bi bi-heart-pulse-fill me-2"></i>護理人員排班系統
+            </h1>
+            <div class="d-grid gap-3">
+                <a href="/staff" class="btn btn-green btn-lg"><i class="bi bi-people me-2"></i>人員管理</a>
+                <a href="/shift" class="btn btn-green btn-lg"><i class="bi bi-clock-history me-2"></i>班別設定</a>
+                <a href="/schedule" class="btn btn-green btn-lg"><i class="bi bi-lightning-charge me-2"></i>自動排班</a>
+                <a href="/view_schedule" class="btn btn-green btn-lg"><i class="bi bi-list-task me-2"></i>班表查詢</a>
+                <a href="/pivot_schedule" class="btn btn-green btn-lg"><i class="bi bi-bar-chart-line me-2"></i>班表分析</a>
+            </div>
+        </div>
     </div>
-  </div>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html> 

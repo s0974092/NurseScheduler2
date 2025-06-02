@@ -8,6 +8,9 @@
 <body>
 <div class="container mt-5">
     <h2>班表查詢</h2>
+    <div class="mb-3">
+        <a href="/calendar_view" class="btn btn-info">月曆檢視</a>
+    </div>
     <form method="post" class="row g-3 mb-3" id="searchForm">
         <div class="col-md-2">
             <input type="date" class="form-control" name="date" value="{{ filters.date }}" placeholder="日期">
@@ -62,7 +65,26 @@
                 <td>{{ row.date }}</td>
                 <td>{{ row.shift_name }}</td>
                 <td>{{ row.ward }}</td>
-                <td>{{ row.staff_name }}</td>
+                <td>{% if row.staff_name == '缺人值班' %}<span style="color:#dc3545;font-weight:bold;">缺人值班</span>{% else %}{{ row.staff_name }}{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <h4 class="mt-4">本月班數統計</h4>
+    <table class="table table-sm table-bordered">
+        <thead>
+            <tr>
+                <th>員工編號</th>
+                <th>姓名</th>
+                <th>班數</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for stat in staff_stats %}
+            <tr{% if stat.count < 22 or stat.count > 30 %} class="table-danger"{% endif %}>
+                <td>{{ stat.staff_id }}</td>
+                <td>{{ stat.name }}</td>
+                <td>{{ stat.count }}</td>
             </tr>
         {% endfor %}
         </tbody>

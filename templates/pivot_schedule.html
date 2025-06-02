@@ -3,20 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <title>班表樞紐分析</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" rel="stylesheet">
     <style>
-        body { background: #f8f9fa; }
+        body { background: #f6fff7; }
+        .main-card { max-width: 1100px; margin: 40px auto; border-radius: 16px; box-shadow: 0 4px 24px rgba(60,180,80,0.10); border: 1.5px solid #b6e2c1; }
+        .main-title { color: #2e7d32; font-weight: bold; letter-spacing: 2px; }
+        .desc { color: #388e3c; font-size: 1.08em; }
+        .pivot-table-container { background: #fff; border-radius: 10px; padding: 18px; }
+        .btn-green { background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%); color: #fff; border: none; }
+        .btn-green:hover { background: linear-gradient(90deg, #38f9d7 0%, #43e97b 100%); color: #fff; }
     </style>
 </head>
 <body>
-<div class="container-fluid mt-3">
-    <div id="output" style="background:white;"></div>
+<div class="container">
+    <div class="card main-card">
+        <div class="card-body">
+            <h3 class="main-title mb-2"><i class="bi bi-bar-chart-line me-2"></i>班表樞紐分析</h3>
+            <div class="desc mb-3">
+                可自由拖曳欄位進行多維度分析，例如：<br>
+                <span class="text-success">「每人每月班數」、「各病房各班別人力分布」、「夜班分布」等</span>。<br>
+                下方可將分析結果匯出為 CSV 檔。
+            </div>
+            <div class="mb-3">
+                <button class="btn btn-green" id="exportCsvBtn"><i class="bi bi-file-earmark-arrow-down me-1"></i>匯出CSV</button>
+            </div>
+            <div class="pivot-table-container">
+                <div id="output"></div>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pivottable@2.23.0/dist/pivot.zh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
 <script>
 $(function(){
     var data = {{ data|tojson }};
@@ -32,6 +57,25 @@ $(function(){
         true,
         "zh"
     );
+    // 匯出CSV功能
+    $('#exportCsvBtn').click(function(){
+        var tbl = $(".pvtTable")[0];
+        if (!tbl) { alert('請先產生分析表格！'); return; }
+        var csv = [];
+        for (var i = 0, row; row = tbl.rows[i]; i++) {
+            var rowData = [];
+            for (var j = 0, col; col = row.cells[j]; j++) {
+                rowData.push('"' + col.innerText.replace(/"/g, '""') + '"');
+            }
+            csv.push(rowData.join(","));
+        }
+        var csvContent = csv.join("\n");
+        var blob = new Blob(["\uFEFF" + csvContent], {type: 'text/csv'});
+        var link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = 'pivot_export.csv';
+        link.click();
+    });
 });
 </script>
 </body>
