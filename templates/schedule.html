@@ -4,10 +4,94 @@
     <meta charset="UTF-8">
     <title>自動排班</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        h2 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+    </style>
 </head>
 <body>
 <div class="container mt-5">
     <h2>自動排班</h2>
+    <div class="mb-3 d-flex gap-2">
+        <a href="/view_schedule" class="btn btn-info">查看班表</a>
+        <a href="/" class="btn btn-secondary">回首頁</a>
+    </div>
+    <!-- 四周變形工時設定區塊 -->
+    <div class="flexible-workweek-section mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>四周變形工時設定</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="is_flexible_workweek" id="flexibleWorkweek" checked>
+                            <label class="form-check-label" for="flexibleWorkweek">
+                                啟用四周變形工時
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="require_holiday" id="requireHoliday" checked>
+                            <label class="form-check-label" for="requireHoliday">
+                                每人每週需要一個例假日
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="require_rest_day" id="requireRestDay" checked>
+                            <label class="form-check-label" for="requireRestDay">
+                                每人每週需要一個休息日
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <label class="form-label">例假日設定</label>
+                        <select class="form-select" name="holiday_day" id="holidayDay">
+                            <option value="1">週一</option>
+                            <option value="2">週二</option>
+                            <option value="3">週三</option>
+                            <option value="4">週四</option>
+                            <option value="5">週五</option>
+                            <option value="6">週六</option>
+                            <option value="7" selected>週日</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="alert alert-warning">
+                            <small>
+                                <strong>注意：</strong>四周變形工時下，每人每週工時不超過40小時， 
+                                例假日與休息日將自動安排，確保員工權益。
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <form method="post" action="/auto_schedule" class="mb-3 row g-3 align-items-end">
         <div class="col-auto">
             <label for="month" class="form-label">選擇月份</label>
@@ -31,11 +115,11 @@
             <input type="number" class="form-control" name="max_per_month" value="30" min="1" max="31">
         </div>
         <div class="col-md-2">
-            <label class="form-label">夜班連續上班天數上限</label>
+            <label class="form-label">大夜班連續天數上限</label>
             <input type="number" class="form-control" name="max_night_consecutive" value="2" min="1" max="7">
         </div>
         <div class="col-md-2">
-            <label class="form-label">夜班每月上限</label>
+            <label class="form-label">大夜班每月上限</label>
             <input type="number" class="form-control" name="max_night_per_month" value="8" min="0" max="31">
         </div>
         <div class="col-md-2">
@@ -59,16 +143,21 @@
                 <option value="yes">是</option>
             </select>
         </div>
+        <div class="col-md-2">
+            <label class="form-label">假日 On Call 整合</label>
+            <select class="form-select" name="include_oncall">
+                <option value="no" selected>否</option>
+                <option value="yes">是</option>
+            </select>
+        </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-primary">一鍵自動排班（產生整月）</button>
         </div>
     </form>
     <div class="alert alert-info mb-3">
-        <b>排班原則：</b>同一位員工從一個班別（如早班）轉換到另一個班別（如晚班或夜班），<br>
+        <b>排班原則：</b>同一位員工從一個班別（如早班）轉換到另一個班別（如小夜班或大夜班），<br>
         <b>中間必須間隔至少11小時</b>（所有班別間皆適用）。
     </div>
-    <a href="/view_schedule" class="btn btn-info mt-3">查看班表</a>
-    <a href="/" class="btn btn-secondary mt-3">回首頁</a>
 </div>
 </body>
 </html> 

@@ -4,12 +4,38 @@
     <meta charset="UTF-8">
     <title>班表查詢</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        h2 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+    </style>
+    <!-- 引入 select2 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 </head>
 <body>
 <div class="container mt-5">
     <h2>班表查詢</h2>
-    <div class="mb-3">
-        <a href="/calendar_view" class="btn btn-info">月曆檢視</a>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="/calendar_view" class="btn btn-info">月曆檢視</a>
+            <a href="/staff_schedule_table" class="btn btn-warning ms-2">員工橫式排班表</a>
+        </div>
+        <a href="/" class="btn btn-secondary">回首頁</a>
     </div>
     <form method="post" class="row g-3 mb-3" id="searchForm">
         <div class="col-md-2">
@@ -58,6 +84,8 @@
                 <th>病房</th>
                 <th>人員</th>
                 <th>工時</th>
+                <th>On Call</th>
+                <th>操作</th>
             </tr>
         </thead>
         <tbody>
@@ -67,7 +95,78 @@
                 <td>{{ row.shift_name }}</td>
                 <td>{{ row.ward }}</td>
                 <td>{% if row.staff_name == '缺人值班' %}<span style="color:#dc3545;font-weight:bold;">缺人值班</span>{% else %}{{ row.staff_name }}{% endif %}</td>
-                <td>8</td>
+                <td>{{ row.work_hours }}</td>
+                <td>
+                    {% if row.oncall_status %}
+                        <span class="badge bg-primary">{{ row.oncall_status }}</span>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if session['role']=='admin' %}
+                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ row.id }}">編輯</button>
+                    <!-- 編輯 Modal -->
+                    <div class="modal fade" id="editModal{{ row.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ row.id }}" aria-hidden="true">
+                      <div class="modal-dialog">
+                        <div class="modal-content">
+                          <form method="post" action="/edit_schedule">
+                          <div class="modal-header">
+                            <h5 class="modal-title" id="editModalLabel{{ row.id }}">編輯班表</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                          </div>
+                          <div class="modal-body">
+                            <input type="hidden" name="id" value="{{ row.id }}">
+                            <div class="mb-2">
+                              <label>日期</label>
+                              <input type="text" class="form-control" value="{{ row.date }}" readonly>
+                            </div>
+                            <div class="mb-2">
+                              <label>班別</label>
+                              <input type="text" class="form-control" value="{{ row.shift_name }}" readonly>
+                            </div>
+                            <div class="mb-2">
+                              <label>員工編號</label>
+                              <select class="form-select staff-select" name="staff_id" data-modal-id="{{ row.id }}">
+                                <option value="">-- 請選擇 --</option>
+                                {% for staff in staff_list %}
+                                  <option value="{{ staff.staff_id }}" {% if row.staff_id==staff.staff_id %}selected{% endif %}>{{ staff.staff_id }} - {{ staff.name }}</option>
+                                {% endfor %}
+                              </select>
+                            </div>
+                            <div class="mb-2">
+                              <label>工時</label>
+                              <input type="number" class="form-control" name="work_hours" value="{{ row.work_hours }}">
+                            </div>
+                            <div class="mb-2">
+                              <label>狀態</label>
+                              <select class="form-select" name="status">
+                                <option value="正常" {% if row.status=='正常' %}selected{% endif %}>正常</option>
+                                <option value="請假" {% if row.status=='請假' %}selected{% endif %}>請假</option>
+                                <option value="調班" {% if row.status=='調班' %}selected{% endif %}>調班</option>
+                                <option value="加班" {% if row.status=='加班' %}selected{% endif %}>加班</option>
+                                <option value="缺勤" {% if row.status=='缺勤' %}selected{% endif %}>缺勤</option>
+                                <option value="其他" {% if row.status=='其他' %}selected{% endif %}>其他</option>
+                              </select>
+                            </div>
+                            <div class="mb-2">
+                              <label>備註</label>
+                              <input type="text" class="form-control" name="remark" value="{{ row.remark }}">
+                            </div>
+                          </div>
+                          <div class="modal-footer">
+                            <button type="submit" class="btn btn-primary">儲存</button>
+                          </div>
+                          </form>
+                          <form method="post" action="/delete_schedule" onsubmit="return confirm('確定要刪除嗎？');">
+                            <input type="hidden" name="id" value="{{ row.id }}">
+                            <button type="submit" class="btn btn-danger">刪除</button>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                    {% endif %}
+                </td>
             </tr>
         {% endfor %}
         </tbody>
@@ -91,7 +190,32 @@
         {% endfor %}
         </tbody>
     </table>
-    <a href="/" class="btn btn-secondary mt-3">回首頁</a>
 </div>
+<!-- 若未載入 Bootstrap 5 JS，補上 -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- JS 錯誤提示區塊 -->
+<div id="js-error-msg" class="text-danger mt-3"></div>
+<script>
+window.onerror = function(msg, url, line, col, error) {
+    document.getElementById('js-error-msg').innerText = 'JS錯誤：' + msg;
+};
+</script>
+<!-- 引入 jQuery CDN（必須在 select2 之前） -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<!-- 引入 select2 CDN -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+  $('.modal').on('shown.bs.modal', function () {
+    $(this).find('.staff-select').select2({
+      dropdownParent: $(this),
+      width: '100%',
+      placeholder: '請輸入員工編號或姓名搜尋',
+      allowClear: true
+    });
+  });
+});
+</script>
 </body>
 </html> 

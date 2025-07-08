@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>員工橫式排班表</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        .main-card { max-width: 98vw; margin: 30px auto; border-radius: 16px; box-shadow: 0 4px 24px rgba(255, 128, 192, 0.10); border: 1.5px solid #ffb6d5; background: #fffafd; }
+        .main-title { color: #d72660; font-weight: bold; letter-spacing: 2px; }
+        th, td { text-align: center; vertical-align: middle; }
+        .shift-cell { font-weight: bold; }
+        /* 新增班別底色 */
+        .shift-morning { background-color: #ffe4b2 !important; }  /* 早班-淡橘 */
+        .shift-evening { background-color: #b2d8ff !important; }  /* 小夜班-淡藍 */
+        .shift-night   { background-color: #d1b2ff !important; }  /* 大夜班-淡紫 */
+        .btn-secondary { background: #f8bbd0; color: #d72660; border: none; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .shift-holiday { background: #ffe0e0; color: #d72660; font-weight: bold; }
+        .shift-rest { background: #e0f7fa; color: #00796b; font-weight: bold; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="card main-card">
+        <div class="card-body">
+            <h3 class="main-title mb-3"><i class="bi bi-table me-2"></i>員工橫式排班表</h3>
+            <table class="table table-bordered table-sm align-middle">
+                <thead class="table-success">
+                    <tr>
+                        <th>姓名</th>
+                        <th>職稱</th>
+                        <th>總工時</th>
+                        <th>累積未休時數</th>
+                        {% for d in dates %}
+                            <th>{{ d[8:] }}</th>
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        {% for wd in weekdays %}
+                            <th>{{ wd }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.title }}</td>
+                        <td>{{ row.total_hours }}</td>
+                        <td>{{ row.leave_hours }}</td>
+                        {% for shift in row.shifts %}
+                            <td class="shift-cell
+                                {% if shift == '早班' %} shift-morning
+                                {% elif shift == '小夜班' %} shift-evening
+                                {% elif shift == '大夜班' %} shift-night
+                                {% elif not shift and loop.index0 is not none and weekdays[loop.index0] == '日' %} shift-holiday
+                                {% elif not shift and loop.index0 is not none and weekdays[loop.index0] == '六' %} shift-rest
+                                {% elif not shift %} shift-rest
+                                {% endif %}">
+                                {% if shift %}
+                                    {{ shift }}
+                                {% elif weekdays[loop.index0] == '日' %}
+                                    例假日
+                                {% elif weekdays[loop.index0] == '六' %}
+                                    休息日
+                                {% else %}
+                                    休息日
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <a href="javascript:history.back()" class="btn btn-secondary mt-3">回上一頁</a>
+        </div>
+    </div>
+</div>
+</body>
+</html> 

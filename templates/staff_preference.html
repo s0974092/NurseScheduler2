@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>排班偏好設定</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        h2 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .modal-content { background: #fffafd; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+        .preference-form { background: #fffafd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+<div class="container mt-5">
+    <h2>排班偏好設定</h2>
+    <div class="mb-3 d-flex gap-2">
+        <a href="/staff" class="btn btn-secondary">回人員管理</a>
+        <a href="/" class="btn btn-info">回首頁</a>
+    </div>
+    
+    <!-- 新增偏好設定表單 -->
+    <div class="preference-form">
+        <h4>新增/編輯排班偏好</h4>
+        <form method="post" action="/add_staff_preference" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">選擇月份</label>
+                <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">選擇人員</label>
+                <select class="form-select" name="staff_id" required>
+                    <option value="">請選擇人員</option>
+                    {% for staff in staff_list %}
+                    <option value="{{ staff.staff_id }}">{{ staff.staff_id }} - {{ staff.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">偏好類型</label>
+                <select class="form-select" name="preference_type" id="preferenceType" required>
+                    <option value="single">單一班別</option>
+                    <option value="dual">雙班別</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">主要班別</label>
+                <select class="form-select" name="shift_id_1" required>
+                    <option value="">請選擇班別</option>
+                    {% for shift in shift_list %}
+                    <option value="{{ shift.shift_id }}">{{ shift.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2" id="shift2Div" style="display:none;">
+                <label class="form-label">次要班別</label>
+                <select class="form-select" name="shift_id_2" id="shift2Select">
+                    <option value="">請選擇班別</option>
+                    {% for shift in shift_list %}
+                    <option value="{{ shift.shift_id }}">{{ shift.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2" id="weekPatternDiv" style="display:none;">
+                <label class="form-label">週次模式</label>
+                <select class="form-select" name="week_pattern" id="weekPatternSelect">
+                    <option value="alternate">交替週次</option>
+                    <option value="consecutive">連續週次</option>
+                </select>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">儲存偏好設定</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 現有偏好設定列表 -->
+    <h4>現有偏好設定</h4>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>月份</th>
+                <th>人員</th>
+                <th>偏好類型</th>
+                <th>主要班別</th>
+                <th>次要班別</th>
+                <th>週次模式</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for pref in preferences %}
+            <tr>
+                <td>{{ pref.month }}</td>
+                <td>{{ pref.staff_name }}</td>
+                <td>{{ '單一班別' if pref.preference_type == 'single' else '雙班別' }}</td>
+                <td>{{ pref.shift_name_1 }}</td>
+                <td>{{ pref.shift_name_2 if pref.shift_name_2 else '-' }}</td>
+                <td>
+                    {% if pref.preference_type == 'dual' %}
+                        {{ '交替週次' if pref.week_pattern == 'alternate' else '連續週次' }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ pref.id }}">編輯</button>
+                    <form method="post" action="/delete_staff_preference" style="display:inline;" onsubmit="return confirm('確定要刪除嗎？');">
+                        <input type="hidden" name="id" value="{{ pref.id }}">
+                        <button type="submit" class="btn btn-danger btn-sm">刪除</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.getElementById('preferenceType').addEventListener('change', function() {
+    var shift2Div = document.getElementById('shift2Div');
+    var weekPatternDiv = document.getElementById('weekPatternDiv');
+    var shift2Select = document.getElementById('shift2Select');
+    var weekPatternSelect = document.getElementById('weekPatternSelect');
+    
+    if (this.value === 'dual') {
+        shift2Div.style.display = 'block';
+        weekPatternDiv.style.display = 'block';
+        shift2Select.required = true;
+        weekPatternSelect.required = true;
+    } else {
+        shift2Div.style.display = 'none';
+        weekPatternDiv.style.display = 'none';
+        shift2Select.required = false;
+        weekPatternSelect.required = false;
+    }
+});
+</script>
+</body>
+</html> 

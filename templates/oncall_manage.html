@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>假日 On Call 管理</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        h2 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+        .oncall-form { background: #fffafd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .oncall-day { background: #ffe6f0; border: 1px solid #ffb6d5; }
+        .backup-day { background: #fff2e6; border: 1px solid #ffd6b6; }
+    </style>
+</head>
+<body>
+<div class="container mt-5">
+    <h2>假日 On Call 管理</h2>
+    <div class="mb-3 d-flex gap-2">
+        <a href="/" class="btn btn-secondary">回首頁</a>
+        <a href="/staff" class="btn btn-info">回人員管理</a>
+    </div>
+    
+    <!-- 新增 On Call 設定表單 -->
+    <div class="oncall-form">
+        <h4>新增 On Call 設定</h4>
+        <form method="post" action="/add_oncall" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">選擇月份</label>
+                <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">選擇日期</label>
+                <input type="date" class="form-control" name="date" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">選擇人員</label>
+                <select class="form-select" name="staff_id" required>
+                    <option value="">請選擇人員</option>
+                    {% for staff in staff_list %}
+                    <option value="{{ staff.staff_id }}">{{ staff.staff_id }} - {{ staff.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">On Call 狀態</label>
+                <select class="form-select" name="status" required>
+                    <option value="oncall">主要 On Call</option>
+                    <option value="backup">備援 On Call</option>
+                    <option value="off">休息</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary">新增</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 批次設定 -->
+    <div class="oncall-form">
+        <h4>批次設定 On Call</h4>
+        <form method="post" action="/batch_oncall" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">選擇月份</label>
+                <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">週末自動設定</label>
+                <select class="form-select" name="auto_weekend">
+                    <option value="yes">是</option>
+                    <option value="no">否</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">每人每月 On Call 天數</label>
+                <input type="number" class="form-control" name="oncall_days" value="4" min="1" max="31">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success">批次設定</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- On Call 月曆檢視 -->
+    <h4>{{ current_month }} On Call 月曆</h4>
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>日期</th>
+                    <th>星期</th>
+                    <th>主要 On Call</th>
+                    <th>備援 On Call</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for day in calendar_days %}
+                <tr class="{% if day.is_weekend %}oncall-day{% endif %}">
+                    <td>{{ day.date }}</td>
+                    <td>{{ day.weekday }}</td>
+                    <td>
+                        {% for oncall in day.oncall_staff %}
+                            {% if oncall.status == 'oncall' %}
+                                <span class="badge bg-primary">{{ oncall.staff_name }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {% for oncall in day.oncall_staff %}
+                            {% if oncall.status == 'backup' %}
+                                <span class="badge bg-warning">{{ oncall.staff_name }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
+                        <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editOncallModal{{ day.date }}">編輯</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 

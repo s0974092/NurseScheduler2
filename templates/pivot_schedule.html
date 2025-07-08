@@ -9,13 +9,15 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.13.2/jquery-ui.min.css">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" rel="stylesheet">
     <style>
-        body { background: #f6fff7; }
-        .main-card { max-width: 1100px; margin: 40px auto; border-radius: 16px; box-shadow: 0 4px 24px rgba(60,180,80,0.10); border: 1.5px solid #b6e2c1; }
-        .main-title { color: #2e7d32; font-weight: bold; letter-spacing: 2px; }
-        .desc { color: #388e3c; font-size: 1.08em; }
+        body { background: #fff0f6; }
+        .main-card { max-width: 1100px; margin: 40px auto; border-radius: 16px; box-shadow: 0 4px 24px rgba(255, 128, 192, 0.10); border: 1.5px solid #ffb6d5; background: #fffafd; }
+        .main-title { color: #d72660; font-weight: bold; letter-spacing: 2px; }
+        .desc { color: #d72660; font-size: 1.08em; }
         .pivot-table-container { background: #fff; border-radius: 10px; padding: 18px; }
-        .btn-green { background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%); color: #fff; border: none; }
-        .btn-green:hover { background: linear-gradient(90deg, #38f9d7 0%, #43e97b 100%); color: #fff; }
+        .btn-green { background: linear-gradient(90deg, #ffb6d5 0%, #ffd6e0 100%); color: #d72660; border: none; }
+        .btn-green:hover { background: linear-gradient(90deg, #ffd6e0 0%, #ffb6d5 100%); color: #fff; }
+        .btn-outline-success { color: #d72660; border-color: #ffb6d5; }
+        .btn-outline-success:hover { background: #ffd6e0; color: #d72660; border-color: #ffd6e0; }
     </style>
 </head>
 <body>
@@ -30,6 +32,7 @@
             </div>
             <div class="mb-3">
                 <button class="btn btn-green" id="exportCsvBtn"><i class="bi bi-file-earmark-arrow-down me-1"></i>匯出CSV</button>
+                <a href="/staff_schedule_table" class="btn btn-outline-success ms-2" target="_blank"><i class="bi bi-table me-1"></i>員工橫式排班表</a>
             </div>
             <div class="pivot-table-container">
                 <div id="output"></div>
@@ -45,11 +48,12 @@
 <script>
 $(function(){
     var data = {{ data|tojson }};
+    console.log(data);
     $("#output").pivotUI(
         data,
         {
             rows: ["date"],
-            cols: ["shift_name"],
+            cols: ["work_hours","shift_name"],
             aggregatorName: "計數",
             rendererName: "表格",
             renderers: $.pivotUtilities.renderers
