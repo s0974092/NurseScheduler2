@@ -505,10 +505,57 @@ def save_daily_requirements():
 @app.route('/auto_schedule', methods=['POST'])
 @login_required
 def auto_schedule():
-    # 取出前端傳過來的月份，並標準化成 YYYY-MM
-    raw_month = request.form.get('month')
-    year, mon = map(int, raw_month.split('-'))
-    month = f"{year:04d}-{mon:02d}"
+    # 取得排班模式
+    schedule_mode = request.form.get('schedule_mode', 'month')
+    
+    # 根據模式取得日期範圍
+    if schedule_mode == 'month':
+        # 整月排班模式
+        raw_month = request.form.get('month')
+        if not raw_month:
+            today = datetime.today()
+            month = today.strftime('%Y-%m')
+        else:
+            year, mon = map(int, raw_month.split('-'))
+            month = f"{year:04d}-{mon:02d}"
+        
+        year, mon = map(int, month.split('-'))
+        days_in_month = monthrange(year, mon)[1]
+        dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
+        
+    else:
+        # 自訂日期範圍模式
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        
+        if not start_date or not end_date:
+            flash('請選擇起始日期與結束日期', 'danger')
+            return redirect(url_for('schedule'))
+        
+        # 驗證日期範圍
+        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        if start_obj > end_obj:
+            flash('起始日期不能大於結束日期', 'danger')
+            return redirect(url_for('schedule'))
+        
+        # 檢查日期範圍是否超過一年
+        if (end_obj - start_obj).days > 365:
+            flash('排班日期範圍不能超過一年', 'danger')
+            return redirect(url_for('schedule'))
+        
+        # 產生日期清單
+        dates = []
+        current_date = start_obj
+        while current_date <= end_obj:
+            dates.append(current_date.strftime('%Y-%m-%d'))
+            current_date += timedelta(days=1)
+        
+        # 使用起始日期的年月作為月份標識
+        month = start_obj.strftime('%Y-%m')
+    
+    # 取得其他排班參數
     max_per_day = int(request.form.get('max_per_day', 1))
     max_consecutive = int(request.form.get('max_consecutive', 5))
     min_per_month = int(request.form.get('min_per_month', 22))
@@ -524,14 +571,6 @@ def auto_schedule():
     require_holiday = request.form.get('require_holiday', 'yes') == 'yes'
     require_rest_day = request.form.get('require_rest_day', 'yes') == 'yes'
     holiday_day = int(request.form.get('holiday_day', 7))  # 預設週日
-    
-    # 如果前端沒傳，或格式不對，就退回今天
-    if not raw_month:
-        today = datetime.today()
-        month = today.strftime('%Y-%m')
-    year, mon = map(int, month.split('-'))
-    days_in_month = monthrange(year, mon)[1]
-    dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
     
     conn = get_db_connection()
     conn.execute('''INSERT OR REPLACE INTO work_schedule_config 
@@ -568,6 +607,23 @@ def auto_schedule():
                 'week_pattern': pref['week_pattern']
             }
     
+    # 計算週次範圍
+    if dates:
+        start_date_obj = datetime.strptime(dates[0], '%Y-%m-%d')
+        end_date_obj = datetime.strptime(dates[-1], '%Y-%m-%d')
+        
+        # 計算總週數（以週一為起始）
+        start_week = start_date_obj.isocalendar()[1]
+        end_week = end_date_obj.isocalendar()[1]
+        total_weeks = end_week - start_week + 1
+        
+        # 如果跨年，需要調整週數計算
+        if start_date_obj.year != end_date_obj.year:
+            # 簡化處理：使用日期範圍內的週數
+            total_weeks = len(dates) // 7 + 1
+    else:
+        total_weeks = 1
+    
     # 初始化狀態
     staff_status = {
         s['staff_id']: {
@@ -580,14 +636,17 @@ def auto_schedule():
             'night_consecutive': 0,
             'last_night_date': None,
             'last_night_worked': False,
-            'week1_count': 0, 'week2_count': 0, 'week3_count': 0,
-            'week4_count': 0, 'week5_count': 0, 'week6_count': 0,
-            'weekly_hours': {i: 0 for i in range(1,7)},
-            'holiday_days': {i: 0 for i in range(1,7)},
-            'rest_days': {i: 0 for i in range(1,7)},
-            'worked_days': {i: 0 for i in range(1,7)},
+            'weekly_hours': {i: 0 for i in range(1, total_weeks + 1)},
+            'holiday_days': {i: 0 for i in range(1, total_weeks + 1)},
+            'rest_days': {i: 0 for i in range(1, total_weeks + 1)},
+            'worked_days': {i: 0 for i in range(1, total_weeks + 1)},
         } for s in staff_list
     }
+    
+    # 動態初始化週次計數
+    for staff_id in staff_status:
+        for w in range(1, total_weeks + 1):
+            staff_status[staff_id][f'week{w}_count'] = 0
     
     # 清掉舊排班
     conn.execute('DELETE FROM schedule WHERE date LIKE ?', (f"{month}%",))
@@ -598,26 +657,34 @@ def auto_schedule():
     # 先分配每週例假(週日)與休息日(週六或其他)
     staff_holidays = {s['staff_id']: {} for s in staff_list}
     staff_restdays = {s['staff_id']: {} for s in staff_list}
+    
     for s in staff_list:
         sid = s['staff_id']
-        for w in range(1,7):
-            sundays = [d for d in dates 
-                       if (datetime.strptime(d, '%Y-%m-%d').weekday()+1)==7
-                       and ((int(d[-2:])-1)//7+1)==w]
-            if sundays:
-                staff_holidays[sid][w] = sundays[0]
+        for w in range(1, total_weeks + 1):
+            # 找出該週的週日
+            week_sundays = []
+            for d in dates:
+                date_obj = datetime.strptime(d, '%Y-%m-%d')
+                # 計算該日期屬於第幾週（相對於起始日期）
+                week_num = ((date_obj - start_date_obj).days // 7) + 1
+                if week_num == w and date_obj.weekday() == 6:  # 週日
+                    week_sundays.append(d)
+            
+            if week_sundays:
+                staff_holidays[sid][w] = week_sundays[0]
 
     # 每人每週從週一～週六隨機分配一天休息
-    staff_restdays = {s['staff_id']: {} for s in staff_list}
     for s in staff_list:
         sid = s['staff_id']
-        for w in range(1, 7):
+        for w in range(1, total_weeks + 1):
             # 該週所有週一～週六的日期
-            week_days = [
-                d for d in dates
-                if ((int(d[-2:]) - 1) // 7 + 1) == w
-                   and (datetime.strptime(d, '%Y-%m-%d').weekday() + 1) in range(1, 7)
-            ]
+            week_days = []
+            for d in dates:
+                date_obj = datetime.strptime(d, '%Y-%m-%d')
+                week_num = ((date_obj - start_date_obj).days // 7) + 1
+                if week_num == w and date_obj.weekday() < 6:  # 週一到週六
+                    week_days.append(d)
+            
             # 隨機挑一日當休息日
             if week_days:
                 staff_restdays[sid][w] = random.choice(week_days)
@@ -625,7 +692,8 @@ def auto_schedule():
     # 主迴圈：每日排班
     for date in dates:
         date_obj = datetime.strptime(date, '%Y-%m-%d')
-        week_of_month = (date_obj.day-1)//7 + 1
+        # 計算該日期屬於第幾週（相對於起始日期）
+        week_of_month = ((date_obj - start_date_obj).days // 7) + 1
         day_of_week = date_obj.weekday() + 1
         is_holiday = (day_of_week == holiday_day)
         date_worked = set()
@@ -650,10 +718,10 @@ def auto_schedule():
                 if st['shift_counts'].get(date,0) >= max_per_day or st['count'] >= max_per_month:
                     continue
                 if is_flexible_workweek:
-                    w = min(week_of_month,6)
-                    if st['weekly_hours'][w] >= 40:
+                    w = min(week_of_month, total_weeks)
+                    if st['weekly_hours'].get(w, 0) >= 40:
                         continue
-                    if require_holiday and is_holiday and st['holiday_days'][w] > 0:
+                    if require_holiday and is_holiday and st['holiday_days'].get(w, 0) > 0:
                         continue
 
                 # 連續上班檢查略…
@@ -684,12 +752,12 @@ def auto_schedule():
                 st['today']        = date
                 
                 # 週次、工時、節假日統計
-                w = min(week_of_month,6)
-                st[f'week{w}_count'] += 1
-                st['weekly_hours'][w]  += 8
+                w = min(week_of_month, total_weeks)
+                st[f'week{w}_count'] = st.get(f'week{w}_count', 0) + 1
+                st['weekly_hours'][w] = st['weekly_hours'].get(w, 0) + 8
                 if is_holiday:
-                    st['holiday_days'][w] += 1
-                st['worked_days'][w]   += 1
+                    st['holiday_days'][w] = st['holiday_days'].get(w, 0) + 1
+                st['worked_days'][w] = st['worked_days'].get(w, 0) + 1
                 
                 # 夜班統計略…
                 date_worked.add(sid)
@@ -714,8 +782,8 @@ def auto_schedule():
             for s in staff_list:
                 sid = s['staff_id']
                 if sid not in date_worked:
-                    w = min(week_of_month,6)
-                    staff_status[sid]['rest_days'][w] += 1
+                    w = min(week_of_month, total_weeks)
+                    staff_status[sid]['rest_days'][w] = staff_status[sid]['rest_days'].get(w, 0) + 1
                 
         
         # 重置當日標記
@@ -724,13 +792,17 @@ def auto_schedule():
     
     # 儲存週工時統計
     for staff_id, st in staff_status.items():
-        for w in range(1,7):
+        for w in range(1, total_weeks + 1):
+            # 動態取得週次統計資料
+            weekly_hours = st['weekly_hours'].get(w, 0)
+            holiday_count = st['holiday_days'].get(w, 0)
+            rest_day_count = st['rest_days'].get(w, 0)
+            work_days = st.get(f'week{w}_count', 0)
+            
             conn.execute(
                 'INSERT INTO weekly_work_stats (staff_id, month, week_number, total_hours, holiday_count, rest_day_count, work_days) '
                 'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (staff_id, month, w,
-                 st['weekly_hours'][w], st['holiday_days'][w],
-                 st['rest_days'][w],    st[f'week{w}_count'])
+                (staff_id, month, w, weekly_hours, holiday_count, rest_day_count, work_days)
             )
     
     conn.commit()

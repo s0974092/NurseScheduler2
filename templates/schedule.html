@@ -23,6 +23,17 @@
         .btn-secondary { background: #f8bbd0; color: #d72660; }
         .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
         .table-bordered th, .table-bordered td { background: #fffafd; }
+        .schedule-mode-selector {
+            background: #fff5f8;
+            border: 2px solid #ffb6d5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .schedule-mode-selector .form-check-input:checked {
+            background-color: #d72660;
+            border-color: #d72660;
+        }
     </style>
 </head>
 <body>
@@ -32,6 +43,32 @@
         <a href="/view_schedule" class="btn btn-info">查看班表</a>
         <a href="/" class="btn btn-secondary">回首頁</a>
     </div>
+    
+    <!-- 排班模式選擇區塊 -->
+    <div class="schedule-mode-selector">
+        <h5 class="mb-3">排班模式選擇</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input type="radio" class="form-check-input" name="schedule_mode" id="monthMode" value="month" checked>
+                    <label class="form-check-label" for="monthMode">
+                        <strong>整月排班模式</strong>
+                    </label>
+                    <small class="form-text text-muted d-block">選擇月份，系統自動產生該月完整排班</small>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input type="radio" class="form-check-input" name="schedule_mode" id="customMode" value="custom">
+                    <label class="form-check-label" for="customMode">
+                        <strong>自訂日期範圍</strong>
+                    </label>
+                    <small class="form-text text-muted d-block">手動設定起始日期與結束日期</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 四周變形工時設定區塊 -->
     <div class="flexible-workweek-section mb-4">
         <div class="card">
@@ -92,72 +129,181 @@
         </div>
     </div>
 
-    <form method="post" action="/auto_schedule" class="mb-3 row g-3 align-items-end">
-        <div class="col-auto">
-            <label for="month" class="form-label">選擇月份</label>
-            <input type="month" class="form-control" id="month" name="month" value="{{ default_month }}" required>
+    <form method="post" action="/auto_schedule" class="mb-3">
+        <!-- 整月排班模式 -->
+        <div id="monthModeSection" class="row g-3 align-items-end mb-3">
+            <div class="col-auto">
+                <label for="month" class="form-label">選擇月份</label>
+                <input type="month" class="form-control" id="month" name="month" value="{{ default_month }}" required>
+            </div>
         </div>
-        <div class="w-100"></div>
-        <div class="col-md-2">
-            <label class="form-label">每人每日最多班數</label>
-            <input type="number" class="form-control" name="max_per_day" value="1" min="1" max="3">
+
+        <!-- 自訂日期範圍模式 -->
+        <div id="customModeSection" class="row g-3 align-items-end mb-3" style="display: none;">
+            <div class="col-md-4">
+                <label for="start_date" class="form-label">起始日期</label>
+                <input type="date" class="form-control" id="start_date" name="start_date" required>
+            </div>
+            <div class="col-md-4">
+                <label for="end_date" class="form-label">結束日期</label>
+                <input type="date" class="form-control" id="end_date" name="end_date" required>
+            </div>
+            <div class="col-md-4">
+                <div class="alert alert-info">
+                    <small>
+                        <strong>日期範圍：</strong><span id="dateRangeInfo">請選擇起始與結束日期</span>
+                    </small>
+                </div>
+            </div>
         </div>
-        <div class="col-md-2">
-            <label class="form-label">連續上班天數上限</label>
-            <input type="number" class="form-control" name="max_consecutive" value="5" min="1" max="14">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">每月班數下限</label>
-            <input type="number" class="form-control" name="min_per_month" value="22" min="0" max="31">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">每月班數上限</label>
-            <input type="number" class="form-control" name="max_per_month" value="30" min="1" max="31">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">大夜班連續天數上限</label>
-            <input type="number" class="form-control" name="max_night_consecutive" value="2" min="1" max="7">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">大夜班每月上限</label>
-            <input type="number" class="form-control" name="max_night_per_month" value="8" min="0" max="31">
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">缺人自動標註</label>
-            <select class="form-select" name="auto_fill_missing">
-                <option value="yes" selected>是</option>
-                <option value="no">否</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">班別公平分配</label>
-            <select class="form-select" name="fair_distribution">
-                <option value="yes" selected>是</option>
-                <option value="no">否</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">特殊人員排班偏好</label>
-            <select class="form-select" name="special_preference">
-                <option value="no" selected>否</option>
-                <option value="yes">是</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">假日 On Call 整合</label>
-            <select class="form-select" name="include_oncall">
-                <option value="no" selected>否</option>
-                <option value="yes">是</option>
-            </select>
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-primary">一鍵自動排班（產生整月）</button>
+
+        <!-- 排班參數設定 -->
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">每人每日最多班數</label>
+                <input type="number" class="form-control" name="max_per_day" value="1" min="1" max="3">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">連續上班天數上限</label>
+                <input type="number" class="form-control" name="max_consecutive" value="5" min="1" max="14">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">每月班數下限</label>
+                <input type="number" class="form-control" name="min_per_month" value="22" min="0" max="31">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">每月班數上限</label>
+                <input type="number" class="form-control" name="max_per_month" value="30" min="1" max="31">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">大夜班連續天數上限</label>
+                <input type="number" class="form-control" name="max_night_consecutive" value="2" min="1" max="7">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">大夜班每月上限</label>
+                <input type="number" class="form-control" name="max_night_per_month" value="8" min="0" max="31">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">缺人自動標註</label>
+                <select class="form-select" name="auto_fill_missing">
+                    <option value="yes" selected>是</option>
+                    <option value="no">否</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">班別公平分配</label>
+                <select class="form-select" name="fair_distribution">
+                    <option value="yes" selected>是</option>
+                    <option value="no">否</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">特殊人員排班偏好</label>
+                <select class="form-select" name="special_preference">
+                    <option value="no" selected>否</option>
+                    <option value="yes">是</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">假日 On Call 整合</label>
+                <select class="form-select" name="include_oncall">
+                    <option value="no" selected>否</option>
+                    <option value="yes">是</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary" id="submitBtn">一鍵自動排班</button>
+            </div>
         </div>
     </form>
+    
     <div class="alert alert-info mb-3">
         <b>排班原則：</b>同一位員工從一個班別（如早班）轉換到另一個班別（如小夜班或大夜班），<br>
         <b>中間必須間隔至少11小時</b>（所有班別間皆適用）。
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const monthMode = document.getElementById('monthMode');
+    const customMode = document.getElementById('customMode');
+    const monthModeSection = document.getElementById('monthModeSection');
+    const customModeSection = document.getElementById('customModeSection');
+    const monthInput = document.getElementById('month');
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    const dateRangeInfo = document.getElementById('dateRangeInfo');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // 設定預設日期（今天開始，30天後結束）
+    const today = new Date();
+    const endDate = new Date();
+    endDate.setDate(today.getDate() + 30);
+    
+    startDateInput.value = today.toISOString().split('T')[0];
+    endDateInput.value = endDate.toISOString().split('T')[0];
+    
+    updateDateRangeInfo();
+
+    // 排班模式切換
+    function toggleScheduleMode() {
+        if (monthMode.checked) {
+            monthModeSection.style.display = 'flex';
+            customModeSection.style.display = 'none';
+            monthInput.required = true;
+            startDateInput.required = false;
+            endDateInput.required = false;
+            submitBtn.textContent = '一鍵自動排班（產生整月）';
+        } else {
+            monthModeSection.style.display = 'none';
+            customModeSection.style.display = 'flex';
+            monthInput.required = false;
+            startDateInput.required = true;
+            endDateInput.required = true;
+            submitBtn.textContent = '一鍵自動排班（自訂日期範圍）';
+        }
+    }
+
+    // 更新日期範圍資訊
+    function updateDateRangeInfo() {
+        const startDate = new Date(startDateInput.value);
+        const endDate = new Date(endDateInput.value);
+        
+        if (startDateInput.value && endDateInput.value) {
+            const diffTime = Math.abs(endDate - startDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            dateRangeInfo.textContent = `${diffDays} 天`;
+        } else {
+            dateRangeInfo.textContent = '請選擇起始與結束日期';
+        }
+    }
+
+    // 事件監聽器
+    monthMode.addEventListener('change', toggleScheduleMode);
+    customMode.addEventListener('change', toggleScheduleMode);
+    startDateInput.addEventListener('change', updateDateRangeInfo);
+    endDateInput.addEventListener('change', updateDateRangeInfo);
+
+    // 表單驗證
+    document.querySelector('form').addEventListener('submit', function(e) {
+        if (customMode.checked) {
+            const startDate = new Date(startDateInput.value);
+            const endDate = new Date(endDateInput.value);
+            
+            if (startDate > endDate) {
+                e.preventDefault();
+                alert('起始日期不能大於結束日期！');
+                return false;
+            }
+            
+            if (endDate - startDate > 365 * 24 * 60 * 60 * 1000) {
+                e.preventDefault();
+                alert('排班日期範圍不能超過一年！');
+                return false;
+            }
+        }
+    });
+});
+</script>
 </body>
 </html> 
