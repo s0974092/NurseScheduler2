@@ -193,7 +193,8 @@ def shift():
     conn = get_db_connection()
     shift_list = conn.execute('SELECT * FROM shift').fetchall()
     
-    # 取得每個班別的每日需求人數
+    # 轉換為列表並處理每日需求人數
+    processed_shifts = []
     for shift in shift_list:
         daily_reqs = conn.execute('SELECT day_of_week, required_count FROM shift_daily_requirements WHERE shift_id = ? ORDER BY day_of_week', 
                                  (shift['shift_id'],)).fetchall()
@@ -217,11 +218,10 @@ def shift():
         shift_dict['saturday_count'] = shift_dict.get('day_6_count', shift['required_count'])
         shift_dict['sunday_count'] = shift_dict.get('day_7_count', shift['required_count'])
         
-        # 更新shift_list中的資料
-        shift_list = [shift_dict if s['shift_id'] == shift['shift_id'] else s for s in shift_list]
+        processed_shifts.append(shift_dict)
     
     conn.close()
-    return render_template('shift.html', shift_list=shift_list)
+    return render_template('shift.html', shift_list=processed_shifts)
 
 @app.route('/schedule')
 @login_required
@@ -236,6 +236,8 @@ def schedule():
 def view_schedule():
     filters = {
         'date': '',
+        'start_date': '',
+        'end_date': '',
         'shift_name': '',
         'ward': '',
         'staff_name': ''
@@ -254,12 +256,19 @@ def view_schedule():
     params = []
     if request.method == 'POST':
         filters['date'] = request.form.get('date', '')
+        filters['start_date'] = request.form.get('start_date', '')
+        filters['end_date'] = request.form.get('end_date', '')
         filters['shift_name'] = request.form.get('shift_name', '')
         filters['ward'] = request.form.get('ward', '')
         filters['staff_name'] = request.form.get('staff_name', '')
+        
         if filters['date']:
             query += ' AND schedule.date = ?'
             params.append(filters['date'])
+        elif filters['start_date'] and filters['end_date']:
+            query += ' AND schedule.date BETWEEN ? AND ?'
+            params.extend([filters['start_date'], filters['end_date']])
+        
         if filters['shift_name']:
             query += ' AND shift.name LIKE ?'
             params.append(f"%{filters['shift_name']}%")
@@ -272,28 +281,28 @@ def view_schedule():
     query += ' ORDER BY schedule.date, shift.name'
     conn = get_db_connection()
     schedule = conn.execute(query, params).fetchall()
-    # 計算本月班數統計
+    
+    # 計算班數統計（支援日期範圍）
     staff_stats = []
     if schedule:
-        # 取出本月
-        first_date = schedule[0]['date']
-        month = first_date[:7]  # yyyy-mm
         staff_count = {}
         staff_name_map = {}
         for row in schedule:
-            if row['date'][:7] == month:
-                sid = row['staff_id']
-                if sid is None:
-                    continue
-                staff_count[sid] = staff_count.get(sid, 0) + 1
-                staff_name_map[sid] = row['staff_name']
+            sid = row['staff_id']
+            if sid is None:
+                continue
+            staff_count[sid] = staff_count.get(sid, 0) + 1
+            staff_name_map[sid] = row['staff_name']
+        
         for sid, count in staff_count.items():
             staff_stats.append({'staff_id': sid, 'name': staff_name_map[sid], 'count': count})
         staff_stats.sort(key=lambda x: x['staff_id'])
+    
     # 將每筆資料加上工時欄位
     schedule = [dict(row) for row in schedule]
     for row in schedule:
         row['work_hours'] = row.get('work_hours', 8)
+    
     # 取得所有員工清單（供下拉選單用）
     staff_rows = conn.execute('SELECT staff_id, name FROM staff').fetchall()
     staff_list = [dict(row) for row in staff_rows]
@@ -708,6 +717,43 @@ def auto_schedule():
             for s in available_staff:
                 sid = s['staff_id']
                 st = staff_status[sid]
+                
+                # 檢查員工排班偏好
+                staff_pref = preferences.get(sid)
+                if staff_pref:
+                    # 如果員工有設定偏好，檢查當前班別是否符合偏好
+                    if staff_pref['type'] == 'single':
+                        # 單一班別：只能安排主要班別
+                        if shift['shift_id'] != staff_pref['shift_id_1']:
+                            continue
+                    elif staff_pref['type'] == 'dual':
+                        # 雙班別：只能安排主要班別或次要班別
+                        if shift['shift_id'] not in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
+                            continue
+                        
+                        # 如果是雙班別，根據週次模式決定安排哪個班別
+                        if staff_pref['week_pattern'] == 'alternate':
+                            # 交替週次：奇數週安排主要班別，偶數週安排次要班別
+                            if week_of_month % 2 == 1:  # 奇數週
+                                if shift['shift_id'] != staff_pref['shift_id_1']:
+                                    continue
+                            else:  # 偶數週
+                                if shift['shift_id'] != staff_pref['shift_id_2']:
+                                    continue
+                        # 連續週次模式：隨機選擇，但優先主要班別
+                        elif staff_pref['week_pattern'] == 'consecutive':
+                            # 檢查該員工在該週是否已經安排了主要班別
+                            main_shift_count = st['shift_counts'].get(staff_pref['shift_id_1'], 0)
+                            secondary_shift_count = st['shift_counts'].get(staff_pref['shift_id_2'], 0)
+                            
+                            # 如果主要班別數量較少，優先安排主要班別
+                            if main_shift_count <= secondary_shift_count:
+                                if shift['shift_id'] != staff_pref['shift_id_1']:
+                                    continue
+                            else:
+                                if shift['shift_id'] != staff_pref['shift_id_2']:
+                                    continue
+                
                 # 只有在「非夜班」時才跳過例假／休息日
                 if not is_night and (
                    staff_holidays[sid].get(week_of_month) == date or
@@ -730,9 +776,53 @@ def auto_schedule():
                 candidates.append((s, st['count'], st['shift_counts'].get(shift['shift_id'],0)))
             
             if fair_distribution:
-                candidates.sort(key=lambda x: (x[1], x[2]))
+                # 優先考慮有偏好設定的員工
+                def candidate_score(candidate):
+                    s, count, shift_count = candidate
+                    sid = s['staff_id']
+                    staff_pref = preferences.get(sid)
+                    
+                    # 有偏好設定的員工優先
+                    if staff_pref:
+                        # 檢查當前班別是否符合偏好
+                        if staff_pref['type'] == 'single':
+                            if shift['shift_id'] == staff_pref['shift_id_1']:
+                                return (0, count, shift_count)  # 最高優先級
+                        elif staff_pref['type'] == 'dual':
+                            if shift['shift_id'] in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
+                                return (1, count, shift_count)  # 次高優先級
+                    
+                    # 沒有偏好設定的員工
+                    return (2, count, shift_count)
+                
+                candidates.sort(key=candidate_score)
             else:
-                random.shuffle(candidates)
+                # 隨機排序，但保持偏好設定的優先級
+                def candidate_score(candidate):
+                    s, count, shift_count = candidate
+                    sid = s['staff_id']
+                    staff_pref = preferences.get(sid)
+                    
+                    if staff_pref:
+                        if staff_pref['type'] == 'single':
+                            if shift['shift_id'] == staff_pref['shift_id_1']:
+                                return 0
+                        elif staff_pref['type'] == 'dual':
+                            if shift['shift_id'] in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
+                                return 1
+                    return 2
+                
+                # 按偏好分組，然後在每組內隨機排序
+                candidates_by_pref = {0: [], 1: [], 2: []}
+                for candidate in candidates:
+                    score = candidate_score(candidate)
+                    candidates_by_pref[score].append(candidate)
+                
+                # 重新組合候選人列表
+                candidates = []
+                for score in [0, 1, 2]:
+                    random.shuffle(candidates_by_pref[score])
+                    candidates.extend(candidates_by_pref[score])
             
             assigned = []
             for c in candidates[:required]:
@@ -872,15 +962,29 @@ def pivot_schedule():
 @app.route('/calendar_view')
 @login_required
 def calendar_view():
-    # 取得本月
+    # 取得查詢參數
     today = datetime.today()
     month = request.args.get('month', today.strftime('%Y-%m'))
-    year, mon = map(int, month.split('-'))
-    days_in_month = monthrange(year, mon)[1]
-    # 新增：取得查詢參數
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
     name = request.args.get('name', '').strip()
     ward = request.args.get('ward', '').strip()
     shift_name = request.args.get('shift_name', '').strip()
+    
+    # 決定查詢的日期範圍
+    if start_date and end_date:
+        # 使用自訂日期範圍
+        query_start = start_date
+        query_end = end_date
+        display_month = start_date[:7]  # 用起始日期的年月作為顯示
+    else:
+        # 使用月份查詢
+        year, mon = map(int, month.split('-'))
+        days_in_month = monthrange(year, mon)[1]
+        query_start = f"{year}-{mon:02d}-01"
+        query_end = f"{year}-{mon:02d}-{days_in_month:02d}"
+        display_month = month
+    
     query = '''
         SELECT schedule.date, shift.name as shift_name, shift.ward as ward,
                COALESCE(staff.name, '缺人值班') as staff_name
@@ -889,7 +993,8 @@ def calendar_view():
         LEFT JOIN staff ON schedule.staff_id = staff.staff_id
         WHERE schedule.date BETWEEN ? AND ?
     '''
-    params = [f"{year}-{mon:02d}-01", f"{year}-{mon:02d}-{days_in_month:02d}"]
+    params = [query_start, query_end]
+    
     if name:
         query += ' AND staff.name LIKE ?'
         params.append(f"%{name}%")
@@ -899,10 +1004,12 @@ def calendar_view():
     if shift_name:
         query += ' AND shift.name LIKE ?'
         params.append(f"%{shift_name}%")
+    
     query += ' ORDER BY schedule.date, shift.name'
     conn = get_db_connection()
     schedule = conn.execute(query, params).fetchall()
     conn.close()
+    
     # 轉換為 FullCalendar events 格式
     events = []
     for row in schedule:
@@ -914,20 +1021,47 @@ def calendar_view():
         if row['staff_name'] == '缺人值班':
             event['className'] = ['fc-missing']
         events.append(event)
+    
     # 保留查詢參數給模板
-    return render_template('calendar_view.html', month=month, events=events, name=name, ward=ward, shift_name=shift_name)
+    return render_template('calendar_view.html', 
+                         month=display_month, 
+                         events=events, 
+                         name=name, 
+                         ward=ward, 
+                         shift_name=shift_name,
+                         start_date=start_date,
+                         end_date=end_date)
 
 @app.route('/staff_schedule_table')
 @login_required
 def staff_schedule_table():
     today = datetime.today()
     month = request.args.get('month', today.strftime('%Y-%m'))
-    year, mon = map(int, month.split('-'))
-    days_in_month = monthrange(year, mon)[1]
-    dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
-    # 新增：計算每天的星期
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # 決定查詢的日期範圍
+    if start_date and end_date:
+        # 使用自訂日期範圍
+        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        dates = []
+        current_date = start_obj
+        while current_date <= end_obj:
+            dates.append(current_date.strftime('%Y-%m-%d'))
+            current_date += timedelta(days=1)
+        display_month = start_date[:7]  # 用起始日期的年月作為顯示
+    else:
+        # 使用月份查詢
+        year, mon = map(int, month.split('-'))
+        days_in_month = monthrange(year, mon)[1]
+        dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
+        display_month = month
+    
+    # 計算每天的星期
     weekday_map = ['一', '二', '三', '四', '五', '六', '日']
     weekdays = [weekday_map[datetime.strptime(d, "%Y-%m-%d").weekday()] for d in dates]
+    
     conn = get_db_connection()
     staff_list = conn.execute('SELECT staff_id, name, title FROM staff').fetchall()
     schedule = conn.execute('''
@@ -937,9 +1071,11 @@ def staff_schedule_table():
         WHERE schedule.date BETWEEN ? AND ?
     ''', (dates[0], dates[-1])).fetchall()
     conn.close()
+    
     schedule_map = {}
     for row in schedule:
         schedule_map.setdefault(row['staff_id'], {})[row['date']] = row['shift_name']
+    
     table = []
     for staff in staff_list:
         row = {
@@ -955,8 +1091,15 @@ def staff_schedule_table():
             if shift:
                 row['total_hours'] += 8
         table.append(row)
-    # 傳遞 weekdays
-    return render_template('staff_schedule_table.html', dates=dates, weekdays=weekdays, table=table)
+    
+    # 傳遞參數給模板
+    return render_template('staff_schedule_table.html', 
+                         dates=dates, 
+                         weekdays=weekdays, 
+                         table=table,
+                         month=display_month,
+                         start_date=start_date,
+                         end_date=end_date)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

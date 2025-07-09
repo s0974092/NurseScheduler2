@@ -135,37 +135,37 @@
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="1" 
-                           value="{{ shift.monday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.monday_count if shift.monday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="2" 
-                           value="{{ shift.tuesday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.tuesday_count if shift.tuesday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="3" 
-                           value="{{ shift.wednesday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.wednesday_count if shift.wednesday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="4" 
-                           value="{{ shift.thursday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.thursday_count if shift.thursday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="5" 
-                           value="{{ shift.friday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.friday_count if shift.friday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="6" 
-                           value="{{ shift.saturday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.saturday_count if shift.saturday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <input type="number" class="form-control form-control-sm daily-requirement" 
                            data-shift-id="{{ shift.shift_id }}" data-day="7" 
-                           value="{{ shift.sunday_count or shift.required_count }}" min="0" style="width: 60px;">
+                           value="{{ shift.sunday_count if shift.sunday_count is not none else shift.required_count }}" min="0" style="width: 60px;">
                 </td>
                 <td>
                     <form method="post" action="/delete_shift" style="display:inline;">
