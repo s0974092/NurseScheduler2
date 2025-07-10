@@ -1219,12 +1219,12 @@ def auto_schedule():
         })
     else:
         print("❌ 排班結果驗證失敗，準備重新生成...")
-                 return jsonify({
-             'success': False,
-             'message': '排班結果不符合需求，系統將自動重新生成',
-             'validation_results': validation_results,
-             'need_regenerate': True
-         })
+        return jsonify({
+            'success': False,
+            'message': '排班結果不符合需求，系統將自動重新生成',
+            'validation_results': validation_results,
+            'need_regenerate': True
+        })
 
 @app.route('/auto_schedule_with_validation', methods=['POST'])
 @login_required
@@ -1232,7 +1232,7 @@ def auto_schedule_with_validation():
     """
     帶有驗證機制的自動排班，會重新生成直到符合需求
     """
-    max_retries = 5  # 最大重試次數
+    max_retries = 10  # 最大重試次數
     retry_count = 0
     
     while retry_count < max_retries:
