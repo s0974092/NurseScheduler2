@@ -132,8 +132,81 @@
     </table>
 </div>
 
+<!-- 編輯模態視窗 -->
+{% for pref in preferences %}
+<div class="modal fade" id="editModal{{ pref.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ pref.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editModalLabel{{ pref.id }}">編輯排班偏好 - {{ pref.staff_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" action="/update_staff_preference" class="row g-3">
+                    <input type="hidden" name="id" value="{{ pref.id }}">
+                    <div class="col-md-6">
+                        <label class="form-label">選擇月份</label>
+                        <input type="month" class="form-control" name="month" value="{{ pref.month }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">選擇人員</label>
+                        <select class="form-select" name="staff_id" required>
+                            {% for staff in staff_list %}
+                            <option value="{{ staff.staff_id }}" {% if staff.staff_id == pref.staff_id %}selected{% endif %}>
+                                {{ staff.staff_id }} - {{ staff.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">偏好類型</label>
+                        <select class="form-select" name="preference_type" id="editPreferenceType{{ pref.id }}" required>
+                            <option value="single" {% if pref.preference_type == 'single' %}selected{% endif %}>單一班別</option>
+                            <option value="dual" {% if pref.preference_type == 'dual' %}selected{% endif %}>雙班別</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">主要班別</label>
+                        <select class="form-select" name="shift_id_1" required>
+                            {% for shift in shift_list %}
+                            <option value="{{ shift.shift_id }}" {% if shift.shift_id == pref.shift_id_1 %}selected{% endif %}>
+                                {{ shift.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4" id="editShift2Div{{ pref.id }}" style="display:{% if pref.preference_type == 'dual' %}block{% else %}none{% endif %};">
+                        <label class="form-label">次要班別</label>
+                        <select class="form-select" name="shift_id_2" id="editShift2Select{{ pref.id }}" {% if pref.preference_type == 'dual' %}required{% endif %}>
+                            <option value="">請選擇班別</option>
+                            {% for shift in shift_list %}
+                            <option value="{{ shift.shift_id }}" {% if shift.shift_id == pref.shift_id_2 %}selected{% endif %}>
+                                {{ shift.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4" id="editWeekPatternDiv{{ pref.id }}" style="display:{% if pref.preference_type == 'dual' %}block{% else %}none{% endif %};">
+                        <label class="form-label">週次模式</label>
+                        <select class="form-select" name="week_pattern" id="editWeekPatternSelect{{ pref.id }}" {% if pref.preference_type == 'dual' %}required{% endif %}>
+                            <option value="alternate" {% if pref.week_pattern == 'alternate' %}selected{% endif %}>交替週次</option>
+                            <option value="consecutive" {% if pref.week_pattern == 'consecutive' %}selected{% endif %}>連續週次</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">更新偏好設定</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// 新增表單的偏好類型變更處理
 document.getElementById('preferenceType').addEventListener('change', function() {
     var shift2Div = document.getElementById('shift2Div');
     var weekPatternDiv = document.getElementById('weekPatternDiv');
@@ -152,6 +225,28 @@ document.getElementById('preferenceType').addEventListener('change', function() 
         weekPatternSelect.required = false;
     }
 });
+
+// 編輯模態視窗的偏好類型變更處理
+{% for pref in preferences %}
+document.getElementById('editPreferenceType{{ pref.id }}').addEventListener('change', function() {
+    var shift2Div = document.getElementById('editShift2Div{{ pref.id }}');
+    var weekPatternDiv = document.getElementById('editWeekPatternDiv{{ pref.id }}');
+    var shift2Select = document.getElementById('editShift2Select{{ pref.id }}');
+    var weekPatternSelect = document.getElementById('editWeekPatternSelect{{ pref.id }}');
+    
+    if (this.value === 'dual') {
+        shift2Div.style.display = 'block';
+        weekPatternDiv.style.display = 'block';
+        shift2Select.required = true;
+        weekPatternSelect.required = true;
+    } else {
+        shift2Div.style.display = 'none';
+        weekPatternDiv.style.display = 'none';
+        shift2Select.required = false;
+        weekPatternSelect.required = false;
+    }
+});
+{% endfor %}
 </script>
 </body>
 </html> 

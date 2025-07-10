@@ -2,6 +2,7 @@ from flask import Flask, render_template, redirect, url_for, request, send_file,
 import os
 import json
 import csv
+import math
 from io import StringIO, BytesIO
 import sqlite3
 import random
@@ -146,6 +147,49 @@ def migrate_existing_data():
             conn.execute('''INSERT OR IGNORE INTO work_schedule_config 
                            (month, is_flexible_workweek, require_holiday, require_rest_day, holiday_day) 
                            VALUES (?, 1, 1, 1, 7)''', (month,))
+        
+        # 3. 建立大夜班預先分配表
+        conn.execute('''CREATE TABLE IF NOT EXISTS night_shift_allocation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            staff_id TEXT NOT NULL,
+            shift_id TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (staff_id) REFERENCES staff (staff_id),
+            FOREIGN KEY (shift_id) REFERENCES shift (shift_id),
+            UNIQUE(start_date, end_date, staff_id)
+        )''')
+        
+        # 如果舊表存在，進行資料遷移
+        try:
+            # 檢查是否有舊的表結構
+            old_columns = conn.execute("PRAGMA table_info(night_shift_allocation)").fetchall()
+            has_old_structure = any(col[1] == 'week_number' for col in old_columns)
+            
+            if has_old_structure:
+                # 備份舊資料
+                old_data = conn.execute("SELECT * FROM night_shift_allocation").fetchall()
+                
+                # 刪除舊表
+                conn.execute("DROP TABLE night_shift_allocation")
+                
+                # 重新建立新表
+                conn.execute('''CREATE TABLE night_shift_allocation (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    staff_id TEXT NOT NULL,
+                    shift_id TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (staff_id) REFERENCES staff (staff_id),
+                    FOREIGN KEY (shift_id) REFERENCES shift (shift_id),
+                    UNIQUE(start_date, end_date, staff_id)
+                )''')
+                
+                print("大夜班分配表結構已更新為日期範圍模式")
+        except:
+            pass
         
         conn.commit()
         print("資料遷移完成")
@@ -514,390 +558,450 @@ def save_daily_requirements():
 @app.route('/auto_schedule', methods=['POST'])
 @login_required
 def auto_schedule():
-    # 取得排班模式
-    schedule_mode = request.form.get('schedule_mode', 'month')
-    
-    # 根據模式取得日期範圍
+
+   # ---------- 自動偵測：有 start/end 就用範圍，否則用月模式 ----------
+    start_raw = request.form.get('start_date')
+    end_raw   = request.form.get('end_date')
+    if start_raw and end_raw:
+        # 使用自訂範圍
+        schedule_mode = 'range'
+    else:
+        # 沒傳就用月模式
+        schedule_mode = 'month'
+
+    # ---------- 統一取得 start_date_obj / end_date_obj ----------
     if schedule_mode == 'month':
-        # 整月排班模式
         raw_month = request.form.get('month')
         if not raw_month:
             today = datetime.today()
-            month = today.strftime('%Y-%m')
+            year, mon = today.year, today.month
         else:
             year, mon = map(int, raw_month.split('-'))
-            month = f"{year:04d}-{mon:02d}"
-        
-        year, mon = map(int, month.split('-'))
-        days_in_month = monthrange(year, mon)[1]
-        dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
-        
+        start_date_obj = datetime(year, mon, 1)
+        end_date_obj   = datetime(year, mon, monthrange(year, mon)[1])
     else:
-        # 自訂日期範圍模式
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        
-        if not start_date or not end_date:
+        # 自訂範圍
+        if not start_raw or not end_raw:
             flash('請選擇起始日期與結束日期', 'danger')
             return redirect(url_for('schedule'))
-        
-        # 驗證日期範圍
-        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
-        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
-        
-        if start_obj > end_obj:
+        start_date_obj = datetime.strptime(start_raw, '%Y-%m-%d')
+        end_date_obj   = datetime.strptime(end_raw,   '%Y-%m-%d')
+        if start_date_obj > end_date_obj:
             flash('起始日期不能大於結束日期', 'danger')
             return redirect(url_for('schedule'))
-        
-        # 檢查日期範圍是否超過一年
-        if (end_obj - start_obj).days > 365:
+        if (end_date_obj - start_date_obj).days > 365:
             flash('排班日期範圍不能超過一年', 'danger')
             return redirect(url_for('schedule'))
-        
-        # 產生日期清單
-        dates = []
-        current_date = start_obj
-        while current_date <= end_obj:
-            dates.append(current_date.strftime('%Y-%m-%d'))
-            current_date += timedelta(days=1)
-        
-        # 使用起始日期的年月作為月份標識
-        month = start_obj.strftime('%Y-%m')
-    
-    # 取得其他排班參數
-    max_per_day = int(request.form.get('max_per_day', 1))
-    max_consecutive = int(request.form.get('max_consecutive', 5))
-    min_per_month = int(request.form.get('min_per_month', 22))
-    max_per_month = int(request.form.get('max_per_month', 30))
+
+    # ---------- 統一產生 dates & months 清單 ----------
+    dates = []
+    cur = start_date_obj
+    while cur <= end_date_obj:
+        dates.append(cur.strftime('%Y-%m-%d'))
+        cur += timedelta(days=1)
+    # 去重並排序月份（格式 YYYY-MM）
+    months = sorted({d[:7] for d in dates})
+
+    # ---------- 計算總週數 ----------
+    total_weeks = math.ceil(len(dates) / 7)
+
+    # ---------- 讀取其他排班參數 ----------
+    max_per_day           = int(request.form.get('max_per_day', 1))
+    max_consecutive       = int(request.form.get('max_consecutive', 5))
+    min_per_month         = int(request.form.get('min_per_month', 22))
+    max_per_month         = int(request.form.get('max_per_month', 30))
     max_night_consecutive = int(request.form.get('max_night_consecutive', 2))
-    max_night_per_month = int(request.form.get('max_night_per_month', 8))
-    auto_fill_missing = request.form.get('auto_fill_missing', 'yes') == 'yes'
-    fair_distribution = request.form.get('fair_distribution', 'yes') == 'yes'
-    special_preference = request.form.get('special_preference', 'no') == 'yes'
-    
+    max_night_per_month   = int(request.form.get('max_night_per_month', 8))
+    auto_fill_missing     = (request.form.get('auto_fill_missing', 'yes') == 'yes')
+    fair_distribution     = (request.form.get('fair_distribution', 'yes') == 'yes')
+    special_preference    = (request.form.get('special_preference', 'no') == 'yes')
+
     # 四周變形工時參數
-    is_flexible_workweek = request.form.get('is_flexible_workweek', 'yes') == 'yes'
-    require_holiday = request.form.get('require_holiday', 'yes') == 'yes'
-    require_rest_day = request.form.get('require_rest_day', 'yes') == 'yes'
-    holiday_day = int(request.form.get('holiday_day', 7))  # 預設週日
+    is_flexible_workweek = (request.form.get('is_flexible_workweek', 'yes') == 'yes')
+    require_holiday       = (request.form.get('require_holiday',      'yes') == 'yes')
+    require_rest_day      = (request.form.get('require_rest_day',     'yes') == 'yes')
+    holiday_day           = int(request.form.get('holiday_day', 7))  # 預設週日
     
+    # 週班別一致性參數
+    week_shift_consistency = (request.form.get('week_shift_consistency', 'yes') == 'yes')
+
+    # ---------- 資料庫連線 & 儲存配置 ----------
     conn = get_db_connection()
-    conn.execute('''INSERT OR REPLACE INTO work_schedule_config 
-                    (month, is_flexible_workweek, require_holiday, require_rest_day, holiday_day) 
-                    VALUES (?, ?, ?, ?, ?)''', 
-                (month, is_flexible_workweek, require_holiday, require_rest_day, holiday_day))
-    
+    # 只用第一個月份作為配置 key
+    conn.execute(
+        '''INSERT OR REPLACE INTO work_schedule_config
+           (month, is_flexible_workweek, require_holiday, require_rest_day, holiday_day)
+           VALUES (?, ?, ?, ?, ?)''',
+        (months[0], is_flexible_workweek, require_holiday, require_rest_day, holiday_day)
+    )
+
+    # 讀取排班班別與員工
     shifts = conn.execute('SELECT * FROM shift').fetchall()
-    staff = conn.execute('SELECT * FROM staff').fetchall()
+    staff  = conn.execute('SELECT * FROM staff').fetchall()
     staff_list = [dict(s) for s in staff]
-    
-    # 每日需求人數
+
+    # 建立每日需求人數字典
     daily_requirements = {}
     for shift in shifts:
-        daily_requirements[shift['shift_id']] = {}
-        for day in range(1, 8):
+        sid = shift['shift_id']
+        daily_requirements[sid] = {}
+        for dow in range(1, 8):
             req = conn.execute(
-                'SELECT required_count FROM shift_daily_requirements WHERE shift_id = ? AND day_of_week = ?', 
-                (shift['shift_id'], day)
+                'SELECT required_count FROM shift_daily_requirements WHERE shift_id = ? AND day_of_week = ?',
+                (sid, dow)
             ).fetchone()
-            daily_requirements[shift['shift_id']][day] = req['required_count'] if req else shift['required_count']
-    
-    # 特殊偏好
-    preferences = {}
-    if special_preference:
-        pref_rows = conn.execute(
-            'SELECT * FROM staff_preference WHERE month = ?', (month,)
-        ).fetchall()
-        for pref in pref_rows:
-            preferences[pref['staff_id']] = {
-                'type': pref['preference_type'],
-                'shift_id_1': pref['shift_id_1'],
-                'shift_id_2': pref['shift_id_2'],
-                'week_pattern': pref['week_pattern']
-            }
-    
-    # 計算週次範圍
-    if dates:
-        start_date_obj = datetime.strptime(dates[0], '%Y-%m-%d')
-        end_date_obj = datetime.strptime(dates[-1], '%Y-%m-%d')
-        
-        # 計算總週數（以週一為起始）
-        start_week = start_date_obj.isocalendar()[1]
-        end_week = end_date_obj.isocalendar()[1]
-        total_weeks = end_week - start_week + 1
-        
-        # 如果跨年，需要調整週數計算
-        if start_date_obj.year != end_date_obj.year:
-            # 簡化處理：使用日期範圍內的週數
-            total_weeks = len(dates) // 7 + 1
-    else:
-        total_weeks = 1
-    
-    # 初始化狀態
+            daily_requirements[sid][dow] = req['required_count'] if req else shift['required_count']
+    # ---------- 初始化員工狀態（務必放在這裡） ----------
     staff_status = {
         s['staff_id']: {
-            'count': 0,
-            'consecutive': 0,
-            'last_date': None,
-            'last_worked': False,
-            'shift_counts': {},
-            'night_count': 0,
+            'count':           0,
+            'consecutive':     0,
+            'last_date':       None,
+            'last_worked':     False,
+            'shift_counts':    {},
+            'night_count':     0,
             'night_consecutive': 0,
-            'last_night_date': None,
+            'last_night_date':   None,
             'last_night_worked': False,
-            'weekly_hours': {i: 0 for i in range(1, total_weeks + 1)},
-            'holiday_days': {i: 0 for i in range(1, total_weeks + 1)},
-            'rest_days': {i: 0 for i in range(1, total_weeks + 1)},
-            'worked_days': {i: 0 for i in range(1, total_weeks + 1)},
-        } for s in staff_list
+            'weekly_hours':    {w: 0 for w in range(1, total_weeks + 1)},
+            'holiday_days':    {w: 0 for w in range(1, total_weeks + 1)},
+            'rest_days':       {w: 0 for w in range(1, total_weeks + 1)},
+            'worked_days':     {w: 0 for w in range(1, total_weeks + 1)},
+            'weekly_shifts':   {w: set() for w in range(1, total_weeks + 1)},  # 追蹤每週的班別
+        }
+        for s in staff_list
     }
-    
-    # 動態初始化週次計數
-    for staff_id in staff_status:
+    # 動態加入 weekX_count
+    for sid in staff_status:
         for w in range(1, total_weeks + 1):
-            staff_status[staff_id][f'week{w}_count'] = 0
+            staff_status[sid][f'week{w}_count'] = 0
+
+    # --------- 讀取特殊偏好（支援多個月份） ----------
+    preferences = {}  # key: (staff_id, month), value: pref 資料
+    if special_preference:
+        # 產生 (?, ?, ..., ?) 的字串
+        placeholder = ','.join('?' for _ in months)
+        sql = f"SELECT * FROM staff_preference WHERE month IN ({placeholder})"
+        rows = conn.execute(sql, months).fetchall()
+        for p in rows:
+            # 以 (staff_id, month) 當 key
+            preferences[(p['staff_id'], p['month'])] = {
+                'type':         p['preference_type'],
+                'shift_id_1':   p['shift_id_1'],
+                'shift_id_2':   p['shift_id_2'],
+                'week_pattern': p['week_pattern'],
+            }
+
+    # --------- 讀取大夜班預先分配 ----------
+    night_shift_allocations = {}  # key: date, value: [(staff_id, shift_id), ...]
     
-    # 清掉舊排班
-    conn.execute('DELETE FROM schedule WHERE date LIKE ?', (f"{month}%",))
-    conn.execute('DELETE FROM weekly_work_stats WHERE month = ?', (month,))
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # 取得日期範圍內的所有大夜班分配
+    start_date = dates[0] if dates else None
+    end_date = dates[-1] if dates else None
+    
+    if start_date and end_date:
+        allocations = conn.execute('''
+            SELECT * FROM night_shift_allocation 
+            WHERE (start_date <= ? AND end_date >= ?) OR 
+                  (start_date >= ? AND start_date <= ?) OR
+                  (end_date >= ? AND end_date <= ?)
+            ORDER BY start_date, staff_id
+        ''', (end_date, start_date, start_date, end_date, start_date, end_date)).fetchall()
+        
+        for allocation in allocations:
+            alloc_start = allocation['start_date']
+            alloc_end = allocation['end_date']
+            staff_id = allocation['staff_id']
+            shift_id = allocation['shift_id']
+            
+            # 為該分配範圍內的每一天建立記錄
+            current_date = datetime.strptime(alloc_start, '%Y-%m-%d')
+            end_date_obj = datetime.strptime(alloc_end, '%Y-%m-%d')
+            
+            while current_date <= end_date_obj:
+                date_str = current_date.strftime('%Y-%m-%d')
+                
+                # 只處理在排班日期範圍內的日期
+                if date_str in dates:
+                    if date_str not in night_shift_allocations:
+                        night_shift_allocations[date_str] = []
+                    night_shift_allocations[date_str].append((staff_id, shift_id))
+                
+                current_date += timedelta(days=1)
+
+    # ---------- 清除舊排班 ----------
+    for m in months:
+        conn.execute('DELETE FROM schedule           WHERE date LIKE ?', (f"{m}%",))
+        conn.execute('DELETE FROM weekly_work_stats WHERE month = ?',     (m,))
+
+    now_str  = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     operator = session.get('username', 'system')
-    
-    # 先分配每週例假(週日)與休息日(週六或其他)
+
+
+
+    # ---------- 計算每週例假與休息日 ----------
     staff_holidays = {s['staff_id']: {} for s in staff_list}
     staff_restdays = {s['staff_id']: {} for s in staff_list}
-    
-    for s in staff_list:
-        sid = s['staff_id']
-        for w in range(1, total_weeks + 1):
-            # 找出該週的週日
-            week_sundays = []
-            for d in dates:
-                date_obj = datetime.strptime(d, '%Y-%m-%d')
-                # 計算該日期屬於第幾週（相對於起始日期）
-                week_num = ((date_obj - start_date_obj).days // 7) + 1
-                if week_num == w and date_obj.weekday() == 6:  # 週日
-                    week_sundays.append(d)
-            
-            if week_sundays:
-                staff_holidays[sid][w] = week_sundays[0]
 
-    # 每人每週從週一～週六隨機分配一天休息
-    for s in staff_list:
-        sid = s['staff_id']
+    # 例假（週日固定）
+    for sid in staff_holidays:
         for w in range(1, total_weeks + 1):
-            # 該週所有週一～週六的日期
-            week_days = []
-            for d in dates:
-                date_obj = datetime.strptime(d, '%Y-%m-%d')
-                week_num = ((date_obj - start_date_obj).days // 7) + 1
-                if week_num == w and date_obj.weekday() < 6:  # 週一到週六
-                    week_days.append(d)
+            start_idx = (w-1)*7
+            end_idx = min(w*7, len(dates))  # 避免超出範圍
+            week_dates = dates[start_idx : end_idx]
+            for d in week_dates:
+                if datetime.strptime(d, '%Y-%m-%d').weekday() == 6:
+                    staff_holidays[sid][w] = d
+                    break
+
+    # 休息日（週一到週六隨機）
+    for sid in staff_restdays:
+        for w in range(1, total_weeks + 1):
+            start_idx = (w-1)*7
+            end_idx = min(w*7, len(dates))  # 避免超出範圍
+            week_dates = dates[start_idx : end_idx]
+            choices = [d for d in week_dates if datetime.strptime(d, '%Y-%m-%d').weekday() < 6]
+            if choices:
+                staff_restdays[sid][w] = random.choice(choices)
+
+    # ---------- 主迴圈：每日排班 ----------
+    for idx, date in enumerate(dates):
+        date_obj     = datetime.strptime(date, '%Y-%m-%d')
+        week_of_month = (idx // 7) + 1
+        dow           = date_obj.weekday() + 1
+        is_holiday    = (dow == holiday_day)
+        worked_today  = set()
+
+        # ---------- 星期日 On Call 處理 ----------
+        if dow == 7:  # 星期日
+            # 檢查是否已有 On Call 設定
+            existing_oncall = conn.execute(
+                'SELECT staff_id FROM oncall_schedule WHERE date = ?', (date,)
+            ).fetchone()
             
-            # 隨機挑一日當休息日
-            if week_days:
-                staff_restdays[sid][w] = random.choice(week_days)
-    
-    # 主迴圈：每日排班
-    for date in dates:
-        date_obj = datetime.strptime(date, '%Y-%m-%d')
-        # 計算該日期屬於第幾週（相對於起始日期）
-        week_of_month = ((date_obj - start_date_obj).days // 7) + 1
-        day_of_week = date_obj.weekday() + 1
-        is_holiday = (day_of_week == holiday_day)
-        date_worked = set()
-        
-        for shift in shifts:
-            required = daily_requirements[shift['shift_id']][day_of_week]
-            ward = shift['ward']
-            is_night = '大夜' in shift['name']
-            available_staff = [s for s in staff_list if s['ward'] == ward]
-            candidates = []
-            
-            for s in available_staff:
-                sid = s['staff_id']
-                st = staff_status[sid]
+            if not existing_oncall:
+                # 計算每位員工的 On Call 次數（本月）
+                current_month = date[:7]
+                oncall_counts = {}
+                for s in staff_list:
+                    count = conn.execute(
+                        'SELECT COUNT(*) FROM oncall_schedule WHERE staff_id = ? AND date LIKE ?',
+                        (s['staff_id'], f"{current_month}%")
+                    ).fetchone()[0]
+                    oncall_counts[s['staff_id']] = count
                 
-                # 檢查員工排班偏好
-                staff_pref = preferences.get(sid)
-                if staff_pref:
-                    # 如果員工有設定偏好，檢查當前班別是否符合偏好
-                    if staff_pref['type'] == 'single':
-                        # 單一班別：只能安排主要班別
-                        if shift['shift_id'] != staff_pref['shift_id_1']:
-                            continue
-                    elif staff_pref['type'] == 'dual':
-                        # 雙班別：只能安排主要班別或次要班別
-                        if shift['shift_id'] not in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
-                            continue
-                        
-                        # 如果是雙班別，根據週次模式決定安排哪個班別
-                        if staff_pref['week_pattern'] == 'alternate':
-                            # 交替週次：奇數週安排主要班別，偶數週安排次要班別
-                            if week_of_month % 2 == 1:  # 奇數週
-                                if shift['shift_id'] != staff_pref['shift_id_1']:
-                                    continue
-                            else:  # 偶數週
-                                if shift['shift_id'] != staff_pref['shift_id_2']:
-                                    continue
-                        # 連續週次模式：隨機選擇，但優先主要班別
-                        elif staff_pref['week_pattern'] == 'consecutive':
-                            # 檢查該員工在該週是否已經安排了主要班別
-                            main_shift_count = st['shift_counts'].get(staff_pref['shift_id_1'], 0)
-                            secondary_shift_count = st['shift_counts'].get(staff_pref['shift_id_2'], 0)
+                # 選擇 On Call 次數最少的員工
+                min_count = min(oncall_counts.values()) if oncall_counts else 0
+                candidates = [s for s in staff_list if oncall_counts.get(s['staff_id'], 0) == min_count]
+                
+                if candidates:
+                    oncall_staff = random.choice(candidates)
+                    conn.execute(
+                        'INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
+                        (date, oncall_staff['staff_id'], 'oncall')
+                    )
+                    print(f"自動設定 {date} 星期日 On Call: {oncall_staff['name']} (本月第{min_count+1}次)")
+
+        for shift in shifts:
+            sid_shift  = shift['shift_id']
+            required   = daily_requirements[sid_shift][dow]
+            ward       = shift['ward']
+            is_night   = '大夜' in shift['name']
+            candidates = []
+
+            # 檢查是否有大夜班預先分配
+            night_allocations = night_shift_allocations.get(date, [])
+            
+            # 如果是大夜班且有預先分配，優先使用預先分配的員工
+            if is_night and night_allocations:
+                for staff_id, allocated_shift_id in night_allocations:
+                    if allocated_shift_id == sid_shift:
+                        # 找到對應的員工
+                        allocated_staff = next((s for s in staff_list if s['staff_id'] == staff_id), None)
+                        if allocated_staff and allocated_staff['ward'] == ward:
+                            st = staff_status[staff_id]
                             
-                            # 如果主要班別數量較少，優先安排主要班別
-                            if main_shift_count <= secondary_shift_count:
-                                if shift['shift_id'] != staff_pref['shift_id_1']:
+                            # 基本檢查（但放寬一些限制）
+                            if st['count'] < max_per_month and st['shift_counts'].get(date, 0) < max_per_day:
+                                candidates.append((allocated_staff, st['count'], st['shift_counts'].get(sid_shift, 0), -1))  # -1 表示預先分配優先
+                                print(f"使用大夜班預先分配：{date} {shift['name']} -> {allocated_staff['name']}")
+
+            # 篩選可用員工
+            for s in staff_list:
+                sid = s['staff_id']
+                if s['ward'] != ward:
+                    continue
+                st = staff_status[sid]
+
+                # 偏好檢查 - 根據日期月份查找偏好設定
+                date_month = date[:7]  # 取得日期的年-月部分
+                pref = preferences.get((sid, date_month))
+                if pref:
+                    if pref['type'] == 'single':
+                        if sid_shift != pref['shift_id_1']:
+                            continue
+                    elif pref['type'] == 'dual':
+                        if sid_shift not in [pref['shift_id_1'], pref['shift_id_2']]:
+                            continue
+                        if pref['week_pattern'] == 'alternate':
+                            if week_of_month % 2 == 1:
+                                if sid_shift != pref['shift_id_1']:
                                     continue
                             else:
-                                if shift['shift_id'] != staff_pref['shift_id_2']:
+                                if sid_shift != pref['shift_id_2']:
                                     continue
-                
-                # 只有在「非夜班」時才跳過例假／休息日
-                if not is_night and (
-                   staff_holidays[sid].get(week_of_month) == date or
-                   staff_restdays[sid].get(week_of_month) == date):
-                    continue
-                if st.get('today') == date:
-                    continue
-                if st['shift_counts'].get(date,0) >= max_per_day or st['count'] >= max_per_month:
-                    continue
-                if is_flexible_workweek:
-                    w = min(week_of_month, total_weeks)
-                    if st['weekly_hours'].get(w, 0) >= 40:
+                        elif pref['week_pattern'] == 'consecutive':
+                            main_shift_count = st['shift_counts'].get(pref['shift_id_1'], 0)
+                            secondary_shift_count = st['shift_counts'].get(pref['shift_id_2'], 0)
+                            if main_shift_count <= secondary_shift_count:
+                                if sid_shift != pref['shift_id_1']:
+                                    continue
+                            else:
+                                if sid_shift != pref['shift_id_2']:
+                                    continue
+
+                # 節假日與休息日檢查
+                if not is_night:
+                    if staff_holidays[sid].get(week_of_month) == date:
                         continue
-                    if require_holiday and is_holiday and st['holiday_days'].get(w, 0) > 0:
+                    if staff_restdays[sid].get(week_of_month) == date:
                         continue
 
-                # 連續上班檢查略…
-                # 夜班限制略…
-                # 11 小時間隔檢查略…
-                candidates.append((s, st['count'], st['shift_counts'].get(shift['shift_id'],0)))
-            
-            if fair_distribution:
-                # 優先考慮有偏好設定的員工
-                def candidate_score(candidate):
-                    s, count, shift_count = candidate
-                    sid = s['staff_id']
-                    staff_pref = preferences.get(sid)
-                    
-                    # 有偏好設定的員工優先
-                    if staff_pref:
-                        # 檢查當前班別是否符合偏好
-                        if staff_pref['type'] == 'single':
-                            if shift['shift_id'] == staff_pref['shift_id_1']:
-                                return (0, count, shift_count)  # 最高優先級
-                        elif staff_pref['type'] == 'dual':
-                            if shift['shift_id'] in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
-                                return (1, count, shift_count)  # 次高優先級
-                    
-                    # 沒有偏好設定的員工
-                    return (2, count, shift_count)
-                
-                candidates.sort(key=candidate_score)
-            else:
-                # 隨機排序，但保持偏好設定的優先級
-                def candidate_score(candidate):
-                    s, count, shift_count = candidate
-                    sid = s['staff_id']
-                    staff_pref = preferences.get(sid)
-                    
-                    if staff_pref:
-                        if staff_pref['type'] == 'single':
-                            if shift['shift_id'] == staff_pref['shift_id_1']:
-                                return 0
-                        elif staff_pref['type'] == 'dual':
-                            if shift['shift_id'] in [staff_pref['shift_id_1'], staff_pref['shift_id_2']]:
-                                return 1
-                    return 2
-                
-                # 按偏好分組，然後在每組內隨機排序
-                candidates_by_pref = {0: [], 1: [], 2: []}
-                for candidate in candidates:
-                    score = candidate_score(candidate)
-                    candidates_by_pref[score].append(candidate)
-                
-                # 重新組合候選人列表
-                candidates = []
-                for score in [0, 1, 2]:
-                    random.shuffle(candidates_by_pref[score])
-                    candidates.extend(candidates_by_pref[score])
-            
-            assigned = []
-            for c in candidates[:required]:
-                s = c[0]
-                sid = s['staff_id']
-                st = staff_status[sid]
-                if st.get('today') == date:
+                # 次數、工時、間隔等檢查（與原邏輯相同）
+                if st['count'] >= max_per_month:
                     continue
-                assigned.append(s)
-                
+                if st['shift_counts'].get(date, 0) >= max_per_day:
+                    continue
+                if is_flexible_workweek:
+                    if st['weekly_hours'][week_of_month] >= 40:
+                        continue
+                    if require_holiday and is_holiday and st['holiday_days'][week_of_month] > 0:
+                        continue
+
+                # 週班別一致性評分
+                week_consistency_score = 0
+                if week_shift_consistency:
+                    current_week_shifts = st['weekly_shifts'][week_of_month]
+                    if current_week_shifts:
+                        # 如果本週已有班別，相同班別優先
+                        if sid_shift in current_week_shifts:
+                            week_consistency_score = 0  # 最高優先級
+                        else:
+                            week_consistency_score = 1  # 較低優先級（不同班別）
+                    else:
+                        week_consistency_score = 0  # 本週還沒排班，所有班別平等
+
+                candidates.append((s, st['count'], st['shift_counts'].get(sid_shift, 0), week_consistency_score))
+
+            # 排序候選人
+            if fair_distribution:
+                if week_shift_consistency:
+                    # 考慮週班別一致性的排序：預先分配 > 偏好設定 > 週班別一致性 > 總班數 > 該班別次數
+                    candidates.sort(key=lambda c: (
+                        0 if c[3] == -1 else 1,  # 預先分配最優先
+                        0 if preferences.get((c[0]['staff_id'], date_month)) else 1,  # 偏好設定優先
+                        c[3] if c[3] != -1 else 0,  # 週班別一致性評分
+                        c[1],  # 總班數
+                        c[2]   # 該班別次數
+                    ))
+                else:
+                    candidates.sort(key=lambda c: (
+                        0 if c[3] == -1 else 1,  # 預先分配最優先
+                        0 if preferences.get((c[0]['staff_id'], date_month)) else 1, 
+                        c[1], 
+                        c[2]
+                    ))
+            else:
+                # 保留原本隨機但分組邏輯，但預先分配仍然優先
+                pre_allocated = [c for c in candidates if c[3] == -1]
+                others = [c for c in candidates if c[3] != -1]
+                random.shuffle(others)
+                candidates = pre_allocated + others
+
+            # 指派
+            assigned = candidates[:required]
+            for c in assigned:
+                s   = c[0]
+                sid = s['staff_id']
+                st  = staff_status[sid]
+
                 # 更新狀態
                 st['count'] += 1
-                st['shift_counts'][shift['shift_id']] = st['shift_counts'].get(shift['shift_id'],0) + 1
-                st['shift_counts'][date] = st['shift_counts'].get(date,0) + 1
-                st['last_date']    = date
-                st['last_worked']  = True
-                st['today']        = date
-                
-                # 週次、工時、節假日統計
-                w = min(week_of_month, total_weeks)
-                st[f'week{w}_count'] = st.get(f'week{w}_count', 0) + 1
-                st['weekly_hours'][w] = st['weekly_hours'].get(w, 0) + 8
+                st['shift_counts'][sid_shift] = st['shift_counts'].get(sid_shift, 0) + 1
+                st['shift_counts'][date]     = st['shift_counts'].get(date, 0)     + 1
+                st['last_date']   = date
+                st['last_worked'] = True
+                st[f'week{week_of_month}_count'] += 1
+                st['weekly_hours'][week_of_month] += 8
                 if is_holiday:
-                    st['holiday_days'][w] = st['holiday_days'].get(w, 0) + 1
-                st['worked_days'][w] = st['worked_days'].get(w, 0) + 1
+                    st['holiday_days'][week_of_month] += 1
+                st['worked_days'][week_of_month] += 1
                 
-                # 夜班統計略…
-                date_worked.add(sid)
-            
-            # 插入排班
-            for s in assigned:
+                # 更新週班別追蹤
+                st['weekly_shifts'][week_of_month].add(sid_shift)
+
+                # 寫入 schedule
                 conn.execute(
-                    'INSERT INTO schedule (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at) '
-                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    (date, shift['shift_id'], s['staff_id'], 8, 1, operator, now_str, now_str)
+                    '''INSERT INTO schedule
+                       (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (date, sid_shift, sid, 8, 1, operator, now_str, now_str)
                 )
-            if auto_fill_missing:
+                worked_today.add(sid)
+
+            # 自動填補缺員
+            if auto_fill_missing and len(assigned) < required:
                 for _ in range(required - len(assigned)):
                     conn.execute(
-                        'INSERT INTO schedule (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at) '
-                        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                        (date, shift['shift_id'], '缺人值班', 8, 1, operator, now_str, now_str)
+                        '''INSERT INTO schedule
+                           (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (date, sid_shift, '缺人值班', 8, 1, operator, now_str, now_str)
                     )
-        
+
         # 當日未上班者累 rest_days
         if not is_holiday:
             for s in staff_list:
                 sid = s['staff_id']
-                if sid not in date_worked:
-                    w = min(week_of_month, total_weeks)
-                    staff_status[sid]['rest_days'][w] = staff_status[sid]['rest_days'].get(w, 0) + 1
-                
-        
-        # 重置當日標記
-        for st in staff_status.values():
-            st['today'] = ''
-    
-    # 儲存週工時統計
-    for staff_id, st in staff_status.items():
+                if sid not in worked_today:
+                    staff_status[sid]['rest_days'][week_of_month] += 1
+
+    # ---------- 儲存週工時統計 ----------
+    for sid, st in staff_status.items():
         for w in range(1, total_weeks + 1):
-            # 動態取得週次統計資料
-            weekly_hours = st['weekly_hours'].get(w, 0)
-            holiday_count = st['holiday_days'].get(w, 0)
-            rest_day_count = st['rest_days'].get(w, 0)
-            work_days = st.get(f'week{w}_count', 0)
+            # 決定該週的統計月份 - 根據實際日期計算
+            start_idx = (w-1)*7
+            end_idx = min(w*7, len(dates))
+            week_dates = dates[start_idx : end_idx]
+            
+            if week_dates:
+                # 使用該週第一個日期來判斷月份
+                first_date = datetime.strptime(week_dates[0], '%Y-%m-%d')
+                stats_month = first_date.strftime('%Y-%m')
+            else:
+                # 備用方案：使用第一個月份
+                stats_month = months[0]
             
             conn.execute(
-                'INSERT INTO weekly_work_stats (staff_id, month, week_number, total_hours, holiday_count, rest_day_count, work_days) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (staff_id, month, w, weekly_hours, holiday_count, rest_day_count, work_days)
+                '''INSERT INTO weekly_work_stats
+                   (staff_id, month, week_number, total_hours, holiday_count, rest_day_count, work_days)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    sid,
+                    stats_month,
+                    w,
+                    st['weekly_hours'][w],
+                    st['holiday_days'][w],
+                    st['rest_days'][w],
+                    st['worked_days'][w]
+                )
             )
-    
+
     conn.commit()
     conn.close()
-    return redirect(url_for('calendar_view', month=month))
+
+    # 導向月曆檢視（使用第一個月份）
+    return redirect(url_for('calendar_view', month=months[0]))
 
 @app.route('/export_schedule', methods=['POST'])
 @login_required
@@ -1383,6 +1487,36 @@ def delete_staff_preference():
     flash('排班偏好設定已刪除', 'success')
     return redirect(url_for('staff_preference'))
 
+# 新增：更新排班偏好
+@app.route('/update_staff_preference', methods=['POST'])
+@login_required
+@admin_required
+def update_staff_preference():
+    pref_id = request.form['id']
+    month = request.form['month']
+    staff_id = request.form['staff_id']
+    preference_type = request.form['preference_type']
+    shift_id_1 = request.form['shift_id_1']
+    shift_id_2 = request.form.get('shift_id_2', None)
+    week_pattern = request.form.get('week_pattern', None)
+    
+    conn = get_db_connection()
+    try:
+        # 更新偏好設定
+        conn.execute('''UPDATE staff_preference 
+                       SET month = ?, staff_id = ?, preference_type = ?, shift_id_1 = ?, shift_id_2 = ?, week_pattern = ?
+                       WHERE id = ?''',
+                   (month, staff_id, preference_type, shift_id_1, shift_id_2, week_pattern, pref_id))
+        
+        conn.commit()
+        flash('排班偏好設定已更新', 'success')
+    except Exception as e:
+        flash(f'更新失敗：{str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('staff_preference'))
+
 # 新增：假日 On Call 管理頁面
 @app.route('/oncall_manage')
 @login_required
@@ -1547,6 +1681,173 @@ def weekly_stats():
     conn.close()
     
     return render_template('weekly_stats.html', stats=stats, config=config, month=month)
+
+@app.route('/night_shift_allocation')
+@login_required
+@admin_required
+def night_shift_allocation():
+    # 預設顯示本月的分配
+    today = datetime.now()
+    default_start = today.replace(day=1).strftime('%Y-%m-%d')
+    default_end = (today.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    default_end = default_end.strftime('%Y-%m-%d')
+    
+    start_date = request.args.get('start_date', default_start)
+    end_date = request.args.get('end_date', default_end)
+    
+    conn = get_db_connection()
+    
+    # 取得員工清單
+    staff_list = conn.execute('SELECT staff_id, name FROM staff ORDER BY name').fetchall()
+    
+    # 取得大夜班班別
+    night_shifts = conn.execute('''
+        SELECT shift_id, name FROM shift 
+        WHERE name LIKE '%大夜%' OR name LIKE '%夜班%'
+        ORDER BY name
+    ''').fetchall()
+    
+    # 取得指定日期範圍的大夜班預先分配
+    allocations = conn.execute('''
+        SELECT nsa.*, s.name as staff_name, sh.name as shift_name
+        FROM night_shift_allocation nsa
+        JOIN staff s ON nsa.staff_id = s.staff_id
+        JOIN shift sh ON nsa.shift_id = sh.shift_id
+        WHERE (nsa.start_date <= ? AND nsa.end_date >= ?) OR 
+              (nsa.start_date >= ? AND nsa.start_date <= ?) OR
+              (nsa.end_date >= ? AND nsa.end_date <= ?)
+        ORDER BY nsa.start_date, nsa.staff_id
+    ''', (end_date, start_date, start_date, end_date, start_date, end_date)).fetchall()
+    
+    conn.close()
+    
+    return render_template('night_shift_allocation.html', 
+                         staff_list=staff_list, 
+                         night_shifts=night_shifts,
+                         allocations=allocations,
+                         start_date=start_date,
+                         end_date=end_date)
+
+@app.route('/add_night_shift_allocation', methods=['POST'])
+@login_required
+@admin_required
+def add_night_shift_allocation():
+    start_date = request.form.get('start_date')
+    end_date = request.form.get('end_date')
+    staff_id = request.form.get('staff_id')
+    shift_id = request.form.get('shift_id')
+    
+    # 取得查詢參數以便返回
+    query_start = request.form.get('query_start_date', start_date)
+    query_end = request.form.get('query_end_date', end_date)
+    
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            INSERT INTO night_shift_allocation 
+            (start_date, end_date, staff_id, shift_id)
+            VALUES (?, ?, ?, ?)
+        ''', (start_date, end_date, staff_id, shift_id))
+        conn.commit()
+        flash('大夜班預先分配新增成功', 'success')
+    except sqlite3.IntegrityError:
+        flash('該員工在此時間範圍已有大夜班分配', 'error')
+    except Exception as e:
+        flash(f'新增失敗：{str(e)}', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('night_shift_allocation', start_date=query_start, end_date=query_end))
+
+@app.route('/delete_night_shift_allocation', methods=['POST'])
+@login_required
+@admin_required
+def delete_night_shift_allocation():
+    allocation_id = request.form.get('allocation_id')
+    query_start = request.form.get('query_start_date')
+    query_end = request.form.get('query_end_date')
+    
+    conn = get_db_connection()
+    try:
+        conn.execute('DELETE FROM night_shift_allocation WHERE id = ?', (allocation_id,))
+        conn.commit()
+        flash('大夜班預先分配刪除成功', 'success')
+    except Exception as e:
+        flash(f'刪除失敗：{str(e)}', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('night_shift_allocation', start_date=query_start, end_date=query_end))
+
+@app.route('/batch_night_shift_allocation', methods=['POST'])
+@login_required
+@admin_required
+def batch_night_shift_allocation():
+    start_date = request.form.get('start_date')
+    end_date = request.form.get('end_date')
+    shift_id = request.form.get('shift_id')
+    
+    conn = get_db_connection()
+    try:
+        # 取得所有員工
+        staff_list = conn.execute('SELECT staff_id FROM staff').fetchall()
+        
+        # 清除該日期範圍的舊分配
+        conn.execute('''DELETE FROM night_shift_allocation 
+                        WHERE (start_date <= ? AND end_date >= ?) OR 
+                              (start_date >= ? AND start_date <= ?) OR
+                              (end_date >= ? AND end_date <= ?)''', 
+                    (end_date, start_date, start_date, end_date, start_date, end_date))
+        
+        # 隨機分配大夜班
+        staff_ids = [s['staff_id'] for s in staff_list]
+        random.shuffle(staff_ids)
+        
+        # 按週分配（每週 7 天）
+        current_date = datetime.strptime(start_date, '%Y-%m-%d')
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        while current_date <= end_date_obj:
+            # 找到這週的開始（週一）
+            week_start = current_date - timedelta(days=current_date.weekday())
+            week_end = week_start + timedelta(days=6)  # 週日
+            
+            if len(staff_ids) >= 2:
+                # 第一個人：週日-週四
+                staff1 = staff_ids.pop()
+                part1_start = max(week_start + timedelta(days=6), current_date)  # 週日
+                part1_end = min(week_start + timedelta(days=3), end_date_obj)    # 週四
+                
+                if part1_start <= part1_end and part1_start <= end_date_obj:
+                    conn.execute('''
+                        INSERT INTO night_shift_allocation 
+                        (start_date, end_date, staff_id, shift_id)
+                        VALUES (?, ?, ?, ?)
+                    ''', (part1_start.strftime('%Y-%m-%d'), part1_end.strftime('%Y-%m-%d'), staff1, shift_id))
+                
+                # 第二個人：週四-週六
+                staff2 = staff_ids.pop() if staff_ids else staff1
+                part2_start = max(week_start + timedelta(days=3), current_date)  # 週四
+                part2_end = min(week_start + timedelta(days=5), end_date_obj)    # 週六
+                
+                if part2_start <= part2_end and part2_start <= end_date_obj:
+                    conn.execute('''
+                        INSERT INTO night_shift_allocation 
+                        (start_date, end_date, staff_id, shift_id)
+                        VALUES (?, ?, ?, ?)
+                    ''', (part2_start.strftime('%Y-%m-%d'), part2_end.strftime('%Y-%m-%d'), staff2, shift_id))
+            
+            # 移到下週
+            current_date = week_end + timedelta(days=1)
+        
+        conn.commit()
+        flash('大夜班批次分配完成', 'success')
+    except Exception as e:
+        flash(f'批次分配失敗：{str(e)}', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('night_shift_allocation', start_date=start_date, end_date=end_date))
 
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=5001)

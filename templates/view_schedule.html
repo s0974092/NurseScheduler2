@@ -39,18 +39,30 @@
     </div>
     <form method="post" class="row g-3 mb-3" id="searchForm">
         <div class="col-md-2">
+            <label class="form-label">單日查詢</label>
             <input type="date" class="form-control" name="date" value="{{ filters.date }}" placeholder="日期">
         </div>
         <div class="col-md-2">
+            <label class="form-label">起始日期</label>
+            <input type="date" class="form-control" name="start_date" value="{{ filters.start_date }}" placeholder="起始日期">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">結束日期</label>
+            <input type="date" class="form-control" name="end_date" value="{{ filters.end_date }}" placeholder="結束日期">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">班別名稱</label>
             <input type="text" class="form-control" name="shift_name" value="{{ filters.shift_name }}" placeholder="班別名稱">
         </div>
         <div class="col-md-2">
+            <label class="form-label">病房</label>
             <input type="text" class="form-control" name="ward" value="{{ filters.ward }}" placeholder="病房">
         </div>
         <div class="col-md-2">
+            <label class="form-label">員工姓名</label>
             <input type="text" class="form-control" name="staff_name" value="{{ filters.staff_name }}" placeholder="員工姓名">
         </div>
-        <div class="col-md-2 d-flex align-items-center">
+        <div class="col-12 d-flex align-items-end">
             <button type="submit" class="btn btn-primary me-2">搜尋</button>
             <a href="/view_schedule" class="btn btn-secondary me-2">清除</a>
             <button type="button" class="btn btn-success" onclick="exportCSV()">匯出CSV</button>
@@ -171,7 +183,7 @@
         {% endfor %}
         </tbody>
     </table>
-    <h4 class="mt-4">本月班數統計</h4>
+    <h4 class="mt-4">班數統計</h4>
     <table class="table table-sm table-bordered">
         <thead>
             <tr>

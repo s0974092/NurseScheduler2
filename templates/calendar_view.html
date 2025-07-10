@@ -25,13 +25,30 @@
 </head>
 <body>
 <div class="container mt-5">
-    <h2>{{ month }} 月曆檢視</h2>
-    <form class="mb-3" id="monthForm">
-        <label for="monthPicker" class="form-label">選擇月份：</label>
-        <input type="month" id="monthPicker" name="month" value="{{ month }}" class="form-control" style="max-width:200px;display:inline-block;">
-    </form>
-    <form class="row g-2 mb-3" method="get" action="/calendar_view">
-        <input type="hidden" name="month" value="{{ month }}">
+    <h2>月曆檢視</h2>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <form class="mb-3" id="monthForm">
+                <label for="monthPicker" class="form-label">選擇月份：</label>
+                <input type="month" id="monthPicker" name="month" value="{{ month }}" class="form-control" style="max-width:200px;display:inline-block;">
+            </form>
+        </div>
+        <div class="col-md-6">
+            <form class="mb-3" id="dateRangeForm">
+                <label class="form-label">自訂日期範圍：</label>
+                <div class="d-flex gap-2">
+                    <input type="date" id="startDate" name="start_date" value="{{ start_date }}" class="form-control" style="max-width:150px;">
+                    <span class="align-self-center">至</span>
+                    <input type="date" id="endDate" name="end_date" value="{{ end_date }}" class="form-control" style="max-width:150px;">
+                    <button type="button" class="btn btn-outline-primary" onclick="applyDateRange()">套用</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <form class="row g-2 mb-3" method="get" action="/calendar_view" id="filterForm">
+        <input type="hidden" name="month" value="{{ month }}" id="monthInput">
+        <input type="hidden" name="start_date" value="{{ start_date }}" id="startDateInput">
+        <input type="hidden" name="end_date" value="{{ end_date }}" id="endDateInput">
         <div class="col-md-3">
             <input type="text" class="form-control" name="name" placeholder="員工姓名" value="{{ name }}">
         </div>
@@ -89,6 +106,29 @@
             }
         });
     });
+    
+    // 日期範圍套用函數
+    function applyDateRange() {
+        var startDate = document.getElementById('startDate').value;
+        var endDate = document.getElementById('endDate').value;
+        
+        if (startDate && endDate) {
+            if (startDate > endDate) {
+                alert('起始日期不能大於結束日期！');
+                return;
+            }
+            
+            // 更新隱藏的輸入欄位
+            document.getElementById('startDateInput').value = startDate;
+            document.getElementById('endDateInput').value = endDate;
+            document.getElementById('monthInput').value = '';
+            
+            // 提交表單
+            document.getElementById('filterForm').submit();
+        } else {
+            alert('請選擇起始日期與結束日期！');
+        }
+    }
 </script>
 </body>
 </html> 

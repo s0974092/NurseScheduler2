@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大夜班預先分配管理</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #fff0f6; }
+        h2, h5, h6 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .modal-content { background: #fffafd; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+        .card { background: #fffafd; border: 1px solid #ffb6d5; }
+        .card-header { background: #ffd6e0; color: #d72660; border-bottom: 1px solid #ffb6d5; }
+        .alert-info { background: #fffafd; border-color: #ffb6d5; color: #d72660; }
+        .alert-warning { background: #ffe0f0; border-color: #ffb6d5; color: #d72660; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-12">
+                <h2>大夜班預先分配管理</h2>
+                <div class="mb-3 d-flex gap-2">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAllocationModal">
+                        新增分配
+                    </button>
+                    <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#batchAllocationModal">
+                        批次分配
+                    </button>
+                    <a href="/staff_preference" class="btn btn-info">員工偏好設定</a>
+                    <a href="/" class="btn btn-secondary">回首頁</a>
+                </div>
+
+                <!-- 日期範圍選擇 -->
+                <div class="alert alert-warning mb-3">
+                    <b>日期範圍篩選</b>
+                    <form method="get" class="row g-3 mt-2">
+                        <div class="col-md-4">
+                            <label for="start_date" class="form-label">起始日期:</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="end_date" class="form-label">結束日期:</label>
+                            <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}" required>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary">查詢</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 說明 -->
+                <div class="alert alert-info">
+                    <strong>說明：</strong>
+                    <ul class="mb-0">
+                        <li>大夜班可依據實際需求設定具體的起始與結束日期</li>
+                        <li>支援跨月份的大夜班分配安排</li>
+                        <li>預先分配後，自動排班時會優先按照此設定進行大夜班安排</li>
+                        <li>批次分配會依「週日-週四」和「週四-週六」模式自動安排</li>
+                    </ul>
+                </div>
+
+                <!-- 大夜班分配表格 -->
+                <table class="table table-bordered mt-3">
+                    <thead>
+                        <tr>
+                            <th>員工姓名</th>
+                            <th>班別名稱</th>
+                            <th>起始日期</th>
+                            <th>結束日期</th>
+                            <th>天數</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if allocations %}
+                            {% for allocation in allocations %}
+                                <tr>
+                                    <td>{{ allocation.staff_name }}</td>
+                                    <td>{{ allocation.shift_name }}</td>
+                                    <td>{{ allocation.start_date }}</td>
+                                    <td>{{ allocation.end_date }}</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-primary">
+                                        {% set start_parts = allocation.start_date.split('-') %}
+                                        {% set end_parts = allocation.end_date.split('-') %}
+                                        {% set start_year = start_parts[0] | int %}
+                                        {% set start_month = start_parts[1] | int %}
+                                        {% set start_day = start_parts[2] | int %}
+                                        {% set end_year = end_parts[0] | int %}
+                                        {% set end_month = end_parts[1] | int %}
+                                        {% set end_day = end_parts[2] | int %}
+                                        
+                                        {% if start_year == end_year and start_month == end_month %}
+                                            {{ end_day - start_day + 1 }} 天
+                                        {% else %}
+                                            多日
+                                        {% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <form method="post" action="/delete_night_shift_allocation" style="display: inline;">
+                                            <input type="hidden" name="allocation_id" value="{{ allocation.id }}">
+                                            <input type="hidden" name="query_start_date" value="{{ start_date }}">
+                                            <input type="hidden" name="query_end_date" value="{{ end_date }}">
+                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('確定要刪除此分配嗎？')">刪除</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted">目前沒有大夜班預先分配</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增分配模態框 -->
+    <div class="modal fade" id="addAllocationModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">新增大夜班分配</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="/add_night_shift_allocation">
+                    <div class="modal-body">
+                        <input type="hidden" name="query_start_date" value="{{ start_date }}">
+                        <input type="hidden" name="query_end_date" value="{{ end_date }}">
+                        
+                        <div class="mb-3">
+                            <label for="staff_id" class="form-label">員工</label>
+                            <select class="form-select" id="staff_id" name="staff_id" required>
+                                <option value="">請選擇員工</option>
+                                {% for staff in staff_list %}
+                                    <option value="{{ staff.staff_id }}">{{ staff.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="shift_id" class="form-label">班別</label>
+                            <select class="form-select" id="shift_id" name="shift_id" required>
+                                <option value="">請選擇班別</option>
+                                {% for shift in night_shifts %}
+                                    <option value="{{ shift.shift_id }}">{{ shift.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="start_date_input" class="form-label">起始日期</label>
+                                <input type="date" class="form-control" id="start_date_input" name="start_date" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="end_date_input" class="form-label">結束日期</label>
+                                <input type="date" class="form-control" id="end_date_input" name="end_date" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">新增</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批次分配模態框 -->
+    <div class="modal fade" id="batchAllocationModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批次分配大夜班</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="/batch_night_shift_allocation">
+                    <div class="modal-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="batch_start_date" class="form-label">起始日期</label>
+                                <input type="date" class="form-control" id="batch_start_date" name="start_date" value="{{ start_date }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="batch_end_date" class="form-label">結束日期</label>
+                                <input type="date" class="form-control" id="batch_end_date" name="end_date" value="{{ end_date }}" required>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="shift_id_batch" class="form-label">大夜班班別</label>
+                            <select class="form-select" id="shift_id_batch" name="shift_id" required>
+                                <option value="">請選擇班別</option>
+                                {% for shift in night_shifts %}
+                                    <option value="{{ shift.shift_id }}">{{ shift.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <strong>注意：</strong>
+                            <ul class="mb-0">
+                                <li>此操作會清除指定日期範圍內所有現有的大夜班分配</li>
+                                <li>系統會自動為每週分配兩位員工</li>
+                                <li>第一位：週日-週四，第二位：週四-週六</li>
+                                <li>分配順序為隨機</li>
+                                <li>支援跨月份批次分配</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-warning" onclick="return confirm('確定要進行批次分配嗎？這會清除指定範圍內現有的分配！')">批次分配</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 自動設定日期欄位的預設值
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const currentDate = today.toISOString().split('T')[0];
+            
+            // 設定新增分配的預設日期
+            document.getElementById('start_date_input').value = currentDate;
+            document.getElementById('end_date_input').value = currentDate;
+            
+            // 驗證結束日期不能早於起始日期
+            document.getElementById('start_date_input').addEventListener('change', validateDates);
+            document.getElementById('end_date_input').addEventListener('change', validateDates);
+            
+            function validateDates() {
+                const startDate = document.getElementById('start_date_input').value;
+                const endDate = document.getElementById('end_date_input').value;
+                
+                if (startDate && endDate && startDate > endDate) {
+                    alert('結束日期不能早於起始日期！');
+                    document.getElementById('end_date_input').value = startDate;
+                }
+            }
+        });
+    </script>
+</body>
+</html> 
