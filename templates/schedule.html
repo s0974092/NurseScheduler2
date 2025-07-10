@@ -219,7 +219,8 @@
                 </select>
             </div>
             <div class="col-auto">
-                <button type="submit" class="btn btn-primary" id="submitBtn">一鍵自動排班</button>
+                <button type="button" class="btn btn-primary" id="submitBtn" onclick="startAutoScheduleWithValidation()">智能自動排班</button>
+                <button type="submit" class="btn btn-outline-secondary" id="basicSubmitBtn">基本自動排班</button>
             </div>
         </div>
     </form>
@@ -311,6 +312,202 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// 智能自動排班函數（帶驗證機制）
+function startAutoScheduleWithValidation() {
+    const form = document.querySelector('form');
+    const submitBtn = document.getElementById('submitBtn');
+    const basicSubmitBtn = document.getElementById('basicSubmitBtn');
+    
+    // 表單驗證
+    if (!validateForm()) {
+        return;
+    }
+    
+    // 禁用按鈕
+    submitBtn.disabled = true;
+    basicSubmitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>智能排班中...';
+    
+    // 顯示進度提示
+    showScheduleProgress('開始智能自動排班...', 'info');
+    
+    // 收集表單資料
+    const formData = new FormData(form);
+    
+    // 發送請求到驗證排班API
+    fetch('/auto_schedule_with_validation', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showScheduleProgress(
+                `✅ ${data.message}<br>重試次數：${data.retry_count}`, 
+                'success'
+            );
+            
+            // 顯示驗證結果詳情
+            displayValidationResults(data.validation_results);
+            
+            setTimeout(() => {
+                window.location.href = data.redirect_url;
+            }, 3000);
+        } else {
+            showScheduleProgress(
+                `❌ ${data.message}<br>${data.retry_count ? `嘗試次數：${data.retry_count}` : ''}`, 
+                'danger'
+            );
+            
+            if (data.validation_results) {
+                displayValidationResults(data.validation_results);
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showScheduleProgress('❌ 排班過程發生錯誤', 'danger');
+    })
+    .finally(() => {
+        // 恢復按鈕狀態
+        setTimeout(() => {
+            submitBtn.disabled = false;
+            basicSubmitBtn.disabled = false;
+            submitBtn.innerHTML = '智能自動排班';
+        }, 3000);
+    });
+}
+
+// 顯示排班進度訊息
+function showScheduleProgress(message, type) {
+    // 移除現有的進度提示
+    const existingAlert = document.querySelector('.schedule-progress-alert');
+    if (existingAlert) {
+        existingAlert.remove();
+    }
+    
+    // 創建新的進度提示
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} schedule-progress-alert mt-3`;
+    alertDiv.innerHTML = `
+        <div class="d-flex align-items-center">
+            <div class="me-3">
+                ${type === 'info' ? '<div class="spinner-border spinner-border-sm"></div>' : ''}
+            </div>
+            <div>${message}</div>
+        </div>
+    `;
+    
+    // 插入到表單後面
+    const form = document.querySelector('form');
+    form.parentNode.insertBefore(alertDiv, form.nextSibling);
+}
+
+// 顯示驗證結果詳情
+function displayValidationResults(results) {
+    const existingResults = document.querySelector('.validation-results');
+    if (existingResults) {
+        existingResults.remove();
+    }
+    
+    const resultsDiv = document.createElement('div');
+    resultsDiv.className = 'validation-results mt-3';
+    
+    let html = '<div class="card"><div class="card-header"><h5>🔍 排班驗證結果</h5></div><div class="card-body">';
+    
+    // 大夜班預先分配檢查
+    html += `
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <strong>大夜班預先分配：</strong>
+                <span class="badge ${results.night_shift_priority.passed ? 'bg-success' : 'bg-danger'}">
+                    ${results.night_shift_priority.passed ? '✅ 通過' : '❌ 失敗'}
+                </span>
+            </div>
+            <div class="col-md-8">
+                ${results.night_shift_priority.details.length > 0 ? 
+                    '<ul class="mb-0">' + results.night_shift_priority.details.map(d => `<li class="text-danger small">${d}</li>`).join('') + '</ul>' : 
+                    '<small class="text-muted">所有預先分配都已正確執行</small>'
+                }
+            </div>
+        </div>
+    `;
+    
+    // 休息日和例假日檢查
+    html += `
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <strong>休息日/例假日安排：</strong>
+                <span class="badge ${results.rest_days_arrangement.passed ? 'bg-success' : 'bg-danger'}">
+                    ${results.rest_days_arrangement.passed ? '✅ 通過' : '❌ 失敗'}
+                </span>
+            </div>
+            <div class="col-md-8">
+                ${results.rest_days_arrangement.details.length > 0 ? 
+                    '<ul class="mb-0">' + results.rest_days_arrangement.details.map(d => `<li class="text-danger small">${d}</li>`).join('') + '</ul>' : 
+                    '<small class="text-muted">所有員工都有適當的休息日和例假日</small>'
+                }
+            </div>
+        </div>
+    `;
+    
+    // 週班別一致性檢查
+    html += `
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <strong>週班別一致性：</strong>
+                <span class="badge ${results.weekly_shift_consistency.passed ? 'bg-success' : 'bg-danger'}">
+                    ${results.weekly_shift_consistency.passed ? '✅ 通過' : '❌ 失敗'}
+                </span>
+            </div>
+            <div class="col-md-8">
+                ${results.weekly_shift_consistency.details.length > 0 ? 
+                    '<ul class="mb-0">' + results.weekly_shift_consistency.details.map(d => `<li class="text-danger small">${d}</li>`).join('') + '</ul>' : 
+                    '<small class="text-muted">所有員工每週最多安排2種班別</small>'
+                }
+            </div>
+        </div>
+    `;
+    
+    html += '</div></div>';
+    resultsDiv.innerHTML = html;
+    
+    // 插入到進度提示後面
+    const progressAlert = document.querySelector('.schedule-progress-alert');
+    if (progressAlert) {
+        progressAlert.parentNode.insertBefore(resultsDiv, progressAlert.nextSibling);
+    }
+}
+
+// 表單驗證函數
+function validateForm() {
+    const monthMode = document.getElementById('monthMode');
+    const customMode = document.getElementById('customMode');
+    
+    if (customMode && customMode.checked) {
+        const startDate = document.getElementById('start_date').value;
+        const endDate = document.getElementById('end_date').value;
+        
+        if (!startDate || !endDate) {
+            alert('請選擇起始日期和結束日期！');
+            return false;
+        }
+        
+        if (new Date(startDate) > new Date(endDate)) {
+            alert('起始日期不能大於結束日期！');
+            return false;
+        }
+    } else if (monthMode && monthMode.checked) {
+        const month = document.getElementById('month').value;
+        if (!month) {
+            alert('請選擇排班月份！');
+            return false;
+        }
+    }
+    
+    return true;
+}
 </script>
 </body>
 </html> 
