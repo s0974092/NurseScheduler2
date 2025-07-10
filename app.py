@@ -908,7 +908,7 @@ def auto_schedule():
         worked_today  = set()
 
         # ---------- 星期日 On Call 處理 ----------
-        if dow == 7:  # 星期日
+        if dow == 7:  # 星期日（只有星期天安排 On Call）
             # 檢查是否已有 On Call 設定
             existing_oncall = conn.execute(
                 'SELECT staff_id FROM oncall_schedule WHERE date = ?', (date,)
@@ -2074,20 +2074,125 @@ def update_staff_preference():
 def oncall_manage():
     conn = get_db_connection()
     staff_list = conn.execute('SELECT * FROM staff ORDER BY staff_id').fetchall()
-    conn.close()
     
     today = datetime.today()
     default_month = today.strftime('%Y-%m')
+    
+    # 取得查詢參數
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    staff_filter = request.args.get('staff_filter', '')
     current_month = request.args.get('month', default_month)
     
-    # 產生月曆資料
-    calendar_days = generate_calendar_days(current_month)
+    calendar_days = []
+    sunday_count = 0
+    
+    if start_date and end_date:
+        # 使用日期範圍查詢
+        try:
+            start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            if start_obj > end_obj:
+                flash('起始日期不能大於結束日期', 'danger')
+                start_date = end_date = ''
+            elif (end_obj - start_obj).days > 365:
+                flash('查詢時間範圍不能超過一年', 'danger')
+                start_date = end_date = ''
+            else:
+                # 產生日期範圍內的所有日期
+                current_date = start_obj
+                while current_date <= end_obj:
+                    date_str = current_date.strftime('%Y-%m-%d')
+                    weekday = current_date.strftime('%A')
+                    weekday_cn = {'Monday': '一', 'Tuesday': '二', 'Wednesday': '三', 
+                                 'Thursday': '四', 'Friday': '五', 'Saturday': '六', 'Sunday': '日'}[weekday]
+                    
+                    # 只處理星期天
+                    if current_date.weekday() == 6:  # 星期天
+                        sunday_count += 1
+                        
+                        # 查詢該日期的 On Call 人員
+                        if staff_filter:
+                            # 有人員篩選
+                            oncall_staff = conn.execute('''
+                                SELECT ocs.*, s.name as staff_name
+                                FROM oncall_schedule ocs
+                                JOIN staff s ON ocs.staff_id = s.staff_id
+                                WHERE ocs.date = ? AND ocs.staff_id = ?
+                            ''', (date_str, staff_filter)).fetchall()
+                        else:
+                            # 無人員篩選
+                            oncall_staff = conn.execute('''
+                                SELECT ocs.*, s.name as staff_name
+                                FROM oncall_schedule ocs
+                                JOIN staff s ON ocs.staff_id = s.staff_id
+                                WHERE ocs.date = ?
+                            ''', (date_str,)).fetchall()
+                        
+                        calendar_days.append({
+                            'date': date_str,
+                            'weekday': weekday_cn,
+                            'is_weekend': True,
+                            'oncall_staff': oncall_staff
+                        })
+                    
+                    current_date += timedelta(days=1)
+                    
+        except ValueError:
+            flash('日期格式錯誤', 'danger')
+            start_date = end_date = ''
+    else:
+        # 使用月份查詢（預設模式）
+        if staff_filter:
+            # 有人員篩選時，使用自定義查詢
+            year, month = map(int, current_month.split('-'))
+            _, last_day = monthrange(year, month)
+            
+            for day in range(1, last_day + 1):
+                date_str = f"{year:04d}-{month:02d}-{day:02d}"
+                date_obj = datetime(year, month, day)
+                weekday = date_obj.strftime('%A')
+                weekday_cn = {'Monday': '一', 'Tuesday': '二', 'Wednesday': '三', 
+                             'Thursday': '四', 'Friday': '五', 'Saturday': '六', 'Sunday': '日'}[weekday]
+                
+                # 只處理星期天
+                if date_obj.weekday() == 6:  # 星期天
+                    sunday_count += 1
+                    
+                    # 查詢該日期的特定人員 On Call 資料
+                    oncall_staff = conn.execute('''
+                        SELECT ocs.*, s.name as staff_name
+                        FROM oncall_schedule ocs
+                        JOIN staff s ON ocs.staff_id = s.staff_id
+                        WHERE ocs.date = ? AND ocs.staff_id = ?
+                    ''', (date_str, staff_filter)).fetchall()
+                    
+                    calendar_days.append({
+                        'date': date_str,
+                        'weekday': weekday_cn,
+                        'is_weekend': True,
+                        'oncall_staff': oncall_staff
+                    })
+        else:
+            # 無人員篩選，使用原本的函數
+            calendar_days = generate_calendar_days(current_month)
+            # 計算該月星期天數量
+            for day in calendar_days:
+                if day['weekday'] == '日':
+                    sunday_count += 1
+    
+    conn.close()
     
     return render_template('oncall_manage.html', 
                          staff_list=staff_list,
                          default_month=default_month,
                          current_month=current_month,
-                         calendar_days=calendar_days)
+                         calendar_days=calendar_days,
+                         start_date=start_date,
+                         end_date=end_date,
+                         staff_filter=staff_filter,
+                         sunday_count=sunday_count)
 
 # 新增：新增 On Call 設定
 @app.route('/add_oncall', methods=['POST'])
@@ -2097,6 +2202,16 @@ def add_oncall():
     date = request.form['date']
     staff_id = request.form['staff_id']
     status = request.form['status']
+    
+    # 驗證是否為星期天
+    try:
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        if date_obj.weekday() != 6:  # 星期天是 weekday 6
+            flash('只能為星期天設定 On Call！', 'danger')
+            return redirect(url_for('oncall_manage'))
+    except ValueError:
+        flash('日期格式錯誤！', 'danger')
+        return redirect(url_for('oncall_manage'))
     
     conn = get_db_connection()
     try:
@@ -2108,15 +2223,43 @@ def add_oncall():
             # 更新現有設定
             conn.execute('UPDATE oncall_schedule SET status = ? WHERE date = ? AND staff_id = ?',
                        (status, date, staff_id))
+            flash(f'{date} 星期天 On Call 設定已更新', 'success')
         else:
             # 新增設定
             conn.execute('INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
                        (date, staff_id, status))
+            flash(f'{date} 星期天 On Call 設定已新增', 'success')
         
         conn.commit()
-        flash('On Call 設定已儲存', 'success')
     except Exception as e:
         flash(f'儲存失敗：{str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('oncall_manage'))
+
+# 新增：刪除 On Call 設定
+@app.route('/delete_oncall', methods=['POST'])
+@login_required
+@admin_required
+def delete_oncall():
+    date = request.form['date']
+    staff_id = request.form['staff_id']
+    
+    conn = get_db_connection()
+    try:
+        # 刪除指定的 On Call 設定
+        result = conn.execute('DELETE FROM oncall_schedule WHERE date = ? AND staff_id = ?', 
+                             (date, staff_id))
+        
+        if result.rowcount > 0:
+            conn.commit()
+            flash(f'{date} 星期天 {staff_id} 的 On Call 設定已刪除', 'success')
+        else:
+            flash('找不到要刪除的 On Call 設定', 'warning')
+            
+    except Exception as e:
+        flash(f'刪除失敗：{str(e)}', 'danger')
     finally:
         conn.close()
     
@@ -2128,33 +2271,35 @@ def add_oncall():
 @admin_required
 def batch_oncall():
     month = request.form['month']
-    auto_weekend = request.form['auto_weekend']
     oncall_days = int(request.form['oncall_days'])
     
     conn = get_db_connection()
     try:
-        # 取得該月所有週末日期
-        if auto_weekend == 'yes':
-            weekend_dates = get_weekend_dates(month)
+        # 取得該月所有星期天日期
+        sunday_dates = get_weekend_dates(month)  # 現在只返回星期天
+        
+        # 取得所有人員
+        staff_list = conn.execute('SELECT staff_id FROM staff').fetchall()
+        
+        if not staff_list:
+            flash('沒有可分配的人員', 'warning')
+            return redirect(url_for('oncall_manage'))
+        
+        # 為每個星期天分配 On Call 人員（輪流分配）
+        for i, date in enumerate(sunday_dates):
+            staff_index = i % len(staff_list)
+            staff_id = staff_list[staff_index]['staff_id']
             
-            # 取得所有人員
-            staff_list = conn.execute('SELECT staff_id FROM staff').fetchall()
+            # 檢查是否已存在該日期的 On Call 設定
+            existing = conn.execute('SELECT id FROM oncall_schedule WHERE date = ?', (date,)).fetchone()
             
-            # 為每個週末分配 On Call 人員
-            for i, date in enumerate(weekend_dates):
-                staff_index = i % len(staff_list)
-                staff_id = staff_list[staff_index]['staff_id']
-                
-                # 檢查是否已存在
-                existing = conn.execute('SELECT id FROM oncall_schedule WHERE date = ? AND staff_id = ?', 
-                                       (date, staff_id)).fetchone()
-                
-                if not existing:
-                    conn.execute('INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
-                               (date, staff_id, 'oncall'))
+            if not existing:
+                conn.execute('INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
+                           (date, staff_id, 'oncall'))
+                print(f"批次設定 {date} 星期天 On Call: {staff_id}")
         
         conn.commit()
-        flash('批次 On Call 設定已完成', 'success')
+        flash(f'批次星期天 On Call 設定已完成，共設定 {len(sunday_dates)} 個星期天', 'success')
     except Exception as e:
         flash(f'批次設定失敗：{str(e)}', 'danger')
     finally:
@@ -2187,24 +2332,25 @@ def generate_calendar_days(month_str):
         calendar_days.append({
             'date': date,
             'weekday': weekday_cn,
-            'is_weekend': weekday in ['Saturday', 'Sunday'],
+            'is_weekend': weekday == 'Sunday',  # 只有星期天標記為特殊日期
             'oncall_staff': oncall_staff
         })
     
     return calendar_days
 
-# 輔助函數：取得週末日期
+# 輔助函數：取得星期天日期
 def get_weekend_dates(month_str):
+    """取得指定月份的所有星期天日期"""
     year, month = map(int, month_str.split('-'))
     _, last_day = monthrange(year, month)
     
-    weekend_dates = []
+    sunday_dates = []
     for day in range(1, last_day + 1):
         date = datetime(year, month, day)
-        if date.strftime('%A') in ['Saturday', 'Sunday']:
-            weekend_dates.append(date.strftime('%Y-%m-%d'))
+        if date.weekday() == 6:  # 星期天是 weekday 6
+            sunday_dates.append(date.strftime('%Y-%m-%d'))
     
-    return weekend_dates
+    return sunday_dates
 
 @app.route('/weekly_stats')
 @login_required

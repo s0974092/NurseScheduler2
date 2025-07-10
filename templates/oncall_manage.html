@@ -2,8 +2,9 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <title>假日 On Call 管理</title>
+    <title>星期天 On Call 管理</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body { background: #fff0f6; }
         h2 { color: #d72660; }
@@ -26,11 +27,13 @@
         .oncall-form { background: #fffafd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .oncall-day { background: #ffe6f0; border: 1px solid #ffb6d5; }
         .backup-day { background: #fff2e6; border: 1px solid #ffd6b6; }
+        .sunday-only { background: #e6f3ff; border: 1px solid #b3d9ff; }
+        .search-form { background: #f0f8ff; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #b3d9ff; }
     </style>
 </head>
 <body>
 <div class="container mt-5">
-    <h2>假日 On Call 管理</h2>
+    <h2>星期天 On Call 管理</h2>
     <div class="mb-3 d-flex gap-2">
         <a href="/" class="btn btn-secondary">回首頁</a>
         <a href="/staff" class="btn btn-info">回人員管理</a>
@@ -39,14 +42,15 @@
     <!-- 新增 On Call 設定表單 -->
     <div class="oncall-form">
         <h4>新增 On Call 設定</h4>
+        <p class="text-muted mb-3">⚠️ 只能為星期天設定 On Call 人員</p>
         <form method="post" action="/add_oncall" class="row g-3">
             <div class="col-md-2">
                 <label class="form-label">選擇月份</label>
                 <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
             </div>
             <div class="col-md-2">
-                <label class="form-label">選擇日期</label>
-                <input type="date" class="form-control" name="date" required>
+                <label class="form-label">選擇日期（僅星期天）</label>
+                <input type="date" class="form-control" name="date" id="date_input" required>
             </div>
             <div class="col-md-3">
                 <label class="form-label">選擇人員</label>
@@ -73,31 +77,75 @@
 
     <!-- 批次設定 -->
     <div class="oncall-form">
-        <h4>批次設定 On Call</h4>
+        <h4>批次設定星期天 On Call</h4>
+        <p class="text-muted mb-3">自動為該月所有星期天輪流分配 On Call 人員</p>
         <form method="post" action="/batch_oncall" class="row g-3">
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">選擇月份</label>
                 <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">週末自動設定</label>
-                <select class="form-select" name="auto_weekend">
-                    <option value="yes">是</option>
-                    <option value="no">否</option>
-                </select>
-            </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">每人每月 On Call 天數</label>
-                <input type="number" class="form-control" name="oncall_days" value="4" min="1" max="31">
+                <input type="number" class="form-control" name="oncall_days" value="2" min="1" max="10">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <button type="submit" class="btn btn-success">批次設定</button>
             </div>
         </form>
     </div>
 
+    <!-- 日期範圍查詢功能 -->
+    <div class="search-form">
+        <h4><i class="fas fa-search"></i> 星期天 On Call 查詢</h4>
+        <form method="GET" action="/oncall_manage" class="row g-3">
+            <div class="col-md-3">
+                <label for="start_date" class="form-label">起始日期</label>
+                <input type="date" class="form-control" id="start_date" name="start_date" 
+                       value="{{ start_date or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label for="end_date" class="form-label">結束日期</label>
+                <input type="date" class="form-control" id="end_date" name="end_date" 
+                       value="{{ end_date or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label for="staff_filter" class="form-label">人員篩選</label>
+                <select class="form-select" id="staff_filter" name="staff_filter">
+                    <option value="">全部人員</option>
+                    {% for staff in staff_list %}
+                    <option value="{{ staff.staff_id }}" {{ 'selected' if staff_filter == staff.staff_id else '' }}>
+                        {{ staff.staff_id }} - {{ staff.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">查詢</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="setCurrentMonth()">本月</button>
+                <button type="button" class="btn btn-outline-warning" onclick="clearSearch()">清除</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 顯示查詢結果資訊 -->
+    {% if start_date and end_date %}
+    <div class="alert alert-info">
+        <strong>查詢期間：</strong>{{ start_date }} 至 {{ end_date }}
+        {% if staff_filter %}
+        <span class="ms-3"><strong>人員篩選：</strong>{{ staff_filter }}</span>
+        {% endif %}
+        <span class="ms-3"><strong>找到：</strong>{{ sunday_count }} 個星期天</span>
+    </div>
+    {% endif %}
+
     <!-- On Call 月曆檢視 -->
-    <h4>{{ current_month }} On Call 月曆</h4>
+    <h4>
+        {% if start_date and end_date %}
+            {{ start_date }} 至 {{ end_date }} 星期天 On Call 查詢結果
+        {% else %}
+            {{ current_month }} 星期天 On Call 月曆
+        {% endif %}
+    </h4>
     <div class="table-responsive">
         <table class="table table-bordered">
             <thead>
@@ -110,34 +158,209 @@
                 </tr>
             </thead>
             <tbody>
-            {% for day in calendar_days %}
-                <tr class="{% if day.is_weekend %}oncall-day{% endif %}">
-                    <td>{{ day.date }}</td>
-                    <td>{{ day.weekday }}</td>
-                    <td>
-                        {% for oncall in day.oncall_staff %}
-                            {% if oncall.status == 'oncall' %}
-                                <span class="badge bg-primary">{{ oncall.staff_name }}</span>
-                            {% endif %}
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {% for oncall in day.oncall_staff %}
-                            {% if oncall.status == 'backup' %}
-                                <span class="badge bg-warning">{{ oncall.staff_name }}</span>
-                            {% endif %}
-                        {% endfor %}
-                    </td>
-                    <td>
-                        <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editOncallModal{{ day.date }}">編輯</button>
-                    </td>
+            {% if calendar_days %}
+                {% for day in calendar_days %}
+                    {% if day.weekday == '日' %}
+                    <tr class="sunday-only">
+                        <td>{{ day.date }}</td>
+                        <td>{{ day.weekday }}</td>
+                        <td>
+                            {% for oncall in day.oncall_staff %}
+                                {% if oncall.status == 'oncall' %}
+                                    <span class="badge bg-primary">{{ oncall.staff_name }}</span>
+                                {% endif %}
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for oncall in day.oncall_staff %}
+                                {% if oncall.status == 'backup' %}
+                                    <span class="badge bg-warning">{{ oncall.staff_name }}</span>
+                                {% endif %}
+                            {% endfor %}
+                        </td>
+                        <td>
+                            <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editOncallModal{{ day.date | replace('-', '') }}">編輯</button>
+                        </td>
+                    </tr>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted">查詢期間內沒有星期天資料</td>
                 </tr>
-            {% endfor %}
+            {% endif %}
             </tbody>
         </table>
     </div>
+    
+    {% if calendar_days %}
+    <div class="mt-3">
+        <small class="text-muted">
+            <i class="fas fa-info-circle"></i>
+            {% if start_date and end_date %}
+                查詢期間共有 {{ calendar_days | selectattr('weekday', 'equalto', '日') | list | length }} 個星期天
+            {% else %}
+                本月共有 {{ calendar_days | selectattr('weekday', 'equalto', '日') | list | length }} 個星期天
+            {% endif %}
+        </small>
+    </div>
+    {% endif %}
 </div>
 
+<!-- 編輯 On Call Modal -->
+{% if calendar_days %}
+    {% for day in calendar_days %}
+        {% if day.weekday == '日' %}
+        <div class="modal fade" id="editOncallModal{{ day.date | replace('-', '') }}" tabindex="-1" aria-labelledby="editOncallModalLabel{{ day.date | replace('-', '') }}" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editOncallModalLabel{{ day.date | replace('-', '') }}">編輯 {{ day.date }} (星期天) On Call</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- 顯示當前 On Call 設定 -->
+                        <div class="mb-3">
+                            <h6>目前設定：</h6>
+                            {% if day.oncall_staff %}
+                                {% for oncall in day.oncall_staff %}
+                                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                                        <span>
+                                            <strong>{{ oncall.staff_name }}</strong> 
+                                            <small class="text-muted">({{ oncall.staff_id }})</small>
+                                            {% if oncall.status == 'oncall' %}
+                                                <span class="badge bg-primary ms-2">主要 On Call</span>
+                                            {% elif oncall.status == 'backup' %}
+                                                <span class="badge bg-warning ms-2">備援 On Call</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary ms-2">休息</span>
+                                            {% endif %}
+                                        </span>
+                                        <form method="post" action="/delete_oncall" style="display: inline;">
+                                            <input type="hidden" name="date" value="{{ day.date }}">
+                                            <input type="hidden" name="staff_id" value="{{ oncall.staff_id }}">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('確定要刪除這個 On Call 設定嗎？')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted">尚未設定 On Call 人員</p>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- 新增/修改 On Call 設定 -->
+                        <hr>
+                        <h6>新增 On Call 設定：</h6>
+                        <form method="post" action="/add_oncall">
+                            <input type="hidden" name="date" value="{{ day.date }}">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">選擇人員</label>
+                                    <select class="form-select" name="staff_id" required>
+                                        <option value="">請選擇人員</option>
+                                        {% for staff in staff_list %}
+                                        <option value="{{ staff.staff_id }}">{{ staff.staff_id }} - {{ staff.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">On Call 狀態</label>
+                                    <select class="form-select" name="status" required>
+                                        <option value="oncall">主要 On Call</option>
+                                        <option value="backup">備援 On Call</option>
+                                        <option value="off">休息</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-12">
+                                    <button type="submit" class="btn btn-primary">新增設定</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+{% endif %}
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// 限制日期選擇只能選星期天
+document.getElementById('date_input').addEventListener('change', function(e) {
+    const selectedDate = new Date(e.target.value);
+    if (selectedDate.getDay() !== 0) { // 0 = 星期天
+        alert('只能選擇星期天的日期！');
+        e.target.value = '';
+    }
+});
+
+// 表單提交前驗證
+document.querySelector('form[action="/add_oncall"]').addEventListener('submit', function(e) {
+    const dateInput = document.getElementById('date_input');
+    if (dateInput.value) {
+        const selectedDate = new Date(dateInput.value);
+        if (selectedDate.getDay() !== 0) {
+            e.preventDefault();
+            alert('只能為星期天設定 On Call！');
+            return false;
+        }
+    }
+});
+
+// 設定本月快捷按鈕
+function setCurrentMonth() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    
+    // 本月第一天
+    const firstDay = `${year}-${month}-01`;
+    
+    // 本月最後一天
+    const lastDay = new Date(year, now.getMonth() + 1, 0);
+    const lastDayStr = `${year}-${month}-${String(lastDay.getDate()).padStart(2, '0')}`;
+    
+    document.getElementById('start_date').value = firstDay;
+    document.getElementById('end_date').value = lastDayStr;
+}
+
+// 清除搜尋
+function clearSearch() {
+    document.getElementById('start_date').value = '';
+    document.getElementById('end_date').value = '';
+    document.getElementById('staff_filter').value = '';
+}
+
+// 表單驗證
+document.querySelector('form[method="GET"]').addEventListener('submit', function(e) {
+    const startDate = document.getElementById('start_date').value;
+    const endDate = document.getElementById('end_date').value;
+    
+    if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        if (start > end) {
+            e.preventDefault();
+            alert('起始日期不能大於結束日期！');
+            return false;
+        }
+        
+        // 限制查詢範圍不超過一年
+        const oneYear = 365 * 24 * 60 * 60 * 1000;
+        if (end - start > oneYear) {
+            e.preventDefault();
+            alert('查詢時間範圍不能超過一年！');
+            return false;
+        }
+    }
+});
+</script>
 </body>
 </html> 

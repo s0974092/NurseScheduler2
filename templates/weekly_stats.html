@@ -30,7 +30,43 @@
 </head>
 <body>
 <div class="container mt-5">
-    <h2>週工時統計 - {{ month }}</h2>
+    <h2>週工時統計</h2>
+    
+    <!-- 日期選擇區域 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>選擇查詢時間區間</h5>
+        </div>
+        <div class="card-body">
+            <form method="GET" action="/weekly_stats" class="row g-3">
+                <div class="col-md-4">
+                    <label for="start_date" class="form-label">起始日期</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date" 
+                           value="{{ start_date or '' }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label for="end_date" class="form-label">結束日期</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date" 
+                           value="{{ end_date or '' }}" required>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2">查詢統計</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setCurrentMonth()">本月</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 顯示當前查詢區間 -->
+    {% if start_date and end_date %}
+    <div class="alert alert-info">
+        <strong>當前查詢區間：</strong>{{ start_date }} 至 {{ end_date }}
+        {% if total_weeks %}
+        <span class="ms-3"><strong>總週數：</strong>{{ total_weeks }}週</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    
     <div class="mb-3 d-flex gap-2">
         <a href="/view_schedule" class="btn btn-info">查看班表</a>
         <a href="/schedule" class="btn btn-primary">自動排班</a>
@@ -71,34 +107,45 @@
                 </tr>
             </thead>
             <tbody>
-            {% for stat in stats %}
-                <tr class="{% if stat.total_hours > 40 %}over-limit{% elif stat.total_hours < 32 %}under-limit{% else %}normal{% endif %}">
-                    <td>{{ stat.staff_id }}</td>
-                    <td>{{ stat.staff_name }}</td>
-                    <td>第{{ stat.week_number }}週</td>
-                    <td>{{ stat.total_hours }}小時</td>
-                    <td>{{ stat.work_days }}天</td>
-                    <td>{{ stat.holiday_count }}天</td>
-                    <td>{{ stat.rest_day_count }}天</td>
-                    <td>
-                        {% if stat.total_hours > 40 %}
-                            <span class="badge bg-danger">工時超限</span>
-                        {% elif stat.total_hours < 32 %}
-                            <span class="badge bg-warning">工時不足</span>
-                        {% else %}
-                            <span class="badge bg-success">正常</span>
-                        {% endif %}
-                        
-                        {% if config and config.require_holiday and stat.holiday_count == 0 %}
-                            <span class="badge bg-warning">缺少例假日</span>
-                        {% endif %}
-                        
-                        {% if config and config.require_rest_day and stat.rest_day_count == 0 %}
-                            <span class="badge bg-warning">缺少休息日</span>
-                        {% endif %}
+            {% if stats %}
+                {% for stat in stats %}
+                    <tr class="{% if stat.total_hours > 40 %}over-limit{% elif stat.total_hours < 32 %}under-limit{% else %}normal{% endif %}">
+                        <td>{{ stat.staff_id }}</td>
+                        <td>{{ stat.staff_name }}</td>
+                        <td>{{ stat.month }} 第{{ stat.week_number }}週</td>
+                        <td>{{ stat.total_hours }}小時</td>
+                        <td>{{ stat.work_days }}天</td>
+                        <td>{{ stat.holiday_count }}天</td>
+                        <td>{{ stat.rest_day_count }}天</td>
+                        <td>
+                            {% if stat.total_hours > 40 %}
+                                <span class="badge bg-danger">工時超限</span>
+                            {% elif stat.total_hours < 32 %}
+                                <span class="badge bg-warning">工時不足</span>
+                            {% else %}
+                                <span class="badge bg-success">正常</span>
+                            {% endif %}
+                            
+                            {% if config and config.require_holiday and stat.holiday_count == 0 %}
+                                <span class="badge bg-warning">缺少例假日</span>
+                            {% endif %}
+                            
+                            {% if config and config.require_rest_day and stat.rest_day_count == 0 %}
+                                <span class="badge bg-warning">缺少休息日</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                        <i class="fas fa-info-circle me-2"></i>
+                        查詢時間區間內暫無週工時統計資料
+                        <br>
+                        <small class="text-muted">請先執行智能自動排班或檢查查詢日期範圍</small>
                     </td>
                 </tr>
-            {% endfor %}
+            {% endif %}
             </tbody>
         </table>
     </div>
@@ -113,5 +160,53 @@
         </ul>
     </div>
 </div>
+
+<script>
+function setCurrentMonth() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    
+    // 本月第一天
+    const firstDay = `${year}-${month}-01`;
+    
+    // 本月最後一天
+    const lastDay = new Date(year, now.getMonth() + 1, 0);
+    const lastDayStr = `${year}-${month}-${String(lastDay.getDate()).padStart(2, '0')}`;
+    
+    document.getElementById('start_date').value = firstDay;
+    document.getElementById('end_date').value = lastDayStr;
+}
+
+// 表單驗證
+document.querySelector('form').addEventListener('submit', function(e) {
+    const startDate = new Date(document.getElementById('start_date').value);
+    const endDate = new Date(document.getElementById('end_date').value);
+    
+    if (startDate > endDate) {
+        e.preventDefault();
+        alert('起始日期不能大於結束日期！');
+        return false;
+    }
+    
+    // 限制查詢範圍不超過一年
+    const oneYear = 365 * 24 * 60 * 60 * 1000;
+    if (endDate - startDate > oneYear) {
+        e.preventDefault();
+        alert('查詢時間範圍不能超過一年！');
+        return false;
+    }
+});
+
+// 頁面載入時設定預設值（如果沒有傳入日期參數）
+document.addEventListener('DOMContentLoaded', function() {
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    
+    if (!startDateInput.value || !endDateInput.value) {
+        setCurrentMonth();
+    }
+});
+</script>
 </body>
 </html> 
