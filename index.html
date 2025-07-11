@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>護理排班系統 - 智能化護理人員排班管理平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #d72660;
+            --secondary-color: #ffb6d5;
+            --accent-color: #fff0f6;
+            --text-dark: #2c3e50;
+            --text-light: #7f8c8d;
+        }
+
+        * {
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+
+        body {
+            line-height: 1.6;
+            color: var(--text-dark);
+        }
+
+        .hero-section {
+            background: linear-gradient(135deg, var(--accent-color) 0%, #ffd6e0 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            width: 200%;
+            height: 200%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="%23ffb6d5" stroke-width="0.5" opacity="0.3"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            top: -50%;
+            left: -50%;
+            z-index: 0;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            border: none;
+            padding: 12px 30px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background: #b8204d;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(215, 38, 96, 0.3);
+        }
+
+        .btn-outline-primary {
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+            padding: 12px 30px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-outline-primary:hover {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+        }
+
+        .feature-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+
+        .feature-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            color: white;
+            font-size: 2rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+
+        .section-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-light);
+            margin-bottom: 3rem;
+        }
+
+        .stats-section {
+            background: var(--primary-color);
+            color: white;
+            padding: 80px 0;
+        }
+
+        .stat-item {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .testimonial-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .pricing-card {
+            background: white;
+            border-radius: 15px;
+            padding: 40px 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            height: 100%;
+            position: relative;
+        }
+
+        .pricing-card.featured {
+            border: 3px solid var(--primary-color);
+            transform: scale(1.05);
+        }
+
+        .pricing-card.featured::before {
+            content: '推薦';
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary-color);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .price {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .footer {
+            background: #2c3e50;
+            color: white;
+            padding: 50px 0 30px;
+        }
+
+        .github-button {
+            background: #24292e;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .github-button:hover {
+            background: #1a1e22;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(36, 41, 46, 0.3);
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            color: var(--primary-color) !important;
+        }
+
+        .scroll-to-top {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .scroll-to-top.show {
+            opacity: 1;
+        }
+
+        .demo-video {
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+
+        @media (max-width: 768px) {
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .hero-section {
+                min-height: 80vh;
+            }
+            
+            .pricing-card.featured {
+                transform: none;
+                margin-top: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#home">
+                <i class="fas fa-heartbeat me-2"></i>護理排班系統
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#features">功能特色</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#benefits">使用效益</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#pricing">方案價格</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#download">立即下載</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-6">
+                    <div class="hero-content">
+                        <h1 class="display-4 fw-bold mb-4">
+                            智能化護理人員<br>
+                            <span style="color: var(--primary-color);">排班管理系統</span>
+                        </h1>
+                        <p class="lead mb-4">
+                            專為醫療機構設計的排班解決方案，支援智能自動排班、人員管理、班表分析，
+                            讓護理排班變得簡單高效，提升醫療品質與工作效率。
+                        </p>
+                        <div class="d-flex flex-wrap gap-3">
+                            <a href="#download" class="btn btn-primary btn-lg">
+                                <i class="fas fa-download me-2"></i>立即下載
+                            </a>
+                            <a href="#demo" class="btn btn-outline-primary btn-lg">
+                                <i class="fas fa-play me-2"></i>觀看示範
+                            </a>
+                        </div>
+                        <div class="mt-4">
+                            <small class="text-muted">
+                                <i class="fas fa-shield-alt me-1"></i>100% 開源免費
+                                <span class="mx-3">•</span>
+                                <i class="fas fa-cloud me-1"></i>支援雲端部署
+                                <span class="mx-3">•</span>
+                                <i class="fas fa-mobile-alt me-1"></i>響應式設計
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="text-center">
+                        <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'><rect width='400' height='300' fill='%23fff0f6' rx='20'/><rect x='20' y='20' width='360' height='40' fill='%23d72660' rx='5'/><circle cx='50' cy='40' r='5' fill='white'/><circle cx='70' cy='40' r='5' fill='white'/><circle cx='90' cy='40' r='5' fill='white'/><rect x='20' y='80' width='80' height='60' fill='%23ffb6d5' rx='5'/><rect x='110' y='80' width='80' height='60' fill='%23ffd6e0' rx='5'/><rect x='200' y='80' width='80' height='60' fill='%23ffb6d5' rx='5'/><rect x='290' y='80' width='80' height='60' fill='%23ffd6e0' rx='5'/><rect x='20' y='160' width='360' height='120' fill='white' stroke='%23ffb6d5' stroke-width='2' rx='5'/><text x='200' y='220' text-anchor='middle' fill='%23d72660' font-size='16' font-family='Arial'>護理排班系統</text></svg>" 
+                             alt="護理排班系統示意圖" class="img-fluid demo-video">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats-section">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-number">95%</span>
+                        <div class="stat-label">排班效率提升</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-number">80%</span>
+                        <div class="stat-label">人力成本節省</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-number">24/7</span>
+                        <div class="stat-label">全天候支援</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-number">100+</span>
+                        <div class="stat-label">醫療機構信賴</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-5">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="section-title">核心功能特色</h2>
+                <p class="section-subtitle">全方位護理排班解決方案，滿足不同規模醫療機構需求</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <h4>智能自動排班</h4>
+                        <p>AI 演算法自動生成最佳排班表，考慮人員偏好、工時限制、法規要求，一鍵完成複雜排班任務。</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h4>人員管理系統</h4>
+                        <p>完整的護理人員資料管理，支援批次匯入、分組管理、權限控制，提升人力資源管理效率。</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <h4>班表查詢分析</h4>
+                        <p>多維度班表查詢、月曆檢視、樞紐分析，支援 CSV 匯出，讓管理決策更精確有效。</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-phone-alt"></i>
+                        </div>
+                        <h4>On Call 管理</h4>
+                        <p>星期天 On Call 人員管理，支援日期範圍查詢、人員篩選、批次分配，確保緊急時刻有人值班。</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <h4>權限管理</h4>
+                        <p>多層級權限控制，管理員與護理人員角色分離，保障資料安全，符合醫療資訊安全標準。</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <h4>數據統計分析</h4>
+                        <p>工時統計、班別分析、人力效能報告，提供豐富的數據視覺化，輔助管理決策制定。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Benefits Section -->
+    <section id="benefits" class="py-5" style="background: var(--accent-color);">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="section-title">為什麼選擇我們的系統？</h2>
+                <p class="section-subtitle">專業團隊打造，為醫療機構量身定制的排班解決方案</p>
+            </div>
+            <div class="row align-items-center">
+                <div class="col-lg-6">
+                    <div class="mb-4">
+                        <h4><i class="fas fa-clock text-primary me-3"></i>節省 80% 排班時間</h4>
+                        <p>從手工排班的數小時縮短到幾分鐘，讓護理主管有更多時間專注於照護品質提升。</p>
+                    </div>
+                    <div class="mb-4">
+                        <h4><i class="fas fa-balance-scale text-primary me-3"></i>確保公平合理分配</h4>
+                        <p>智能演算法確保工時平均分配，避免人為偏差，提升團隊和諧與工作滿意度。</p>
+                    </div>
+                    <div class="mb-4">
+                        <h4><i class="fas fa-gavel text-primary me-3"></i>符合勞基法規範</h4>
+                        <p>內建勞基法檢核機制，自動檢查工時間隔、連續工作天數，避免違法風險。</p>
+                    </div>
+                    <div class="mb-4">
+                        <h4><i class="fas fa-mobile-alt text-primary me-3"></i>隨時隨地存取</h4>
+                        <p>響應式網頁設計，支援手機、平板、電腦多平台使用，隨時查看最新班表。</p>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="text-center">
+                        <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400'><rect width='300' height='400' fill='white' rx='20' stroke='%23d72660' stroke-width='3'/><rect x='20' y='20' width='260' height='40' fill='%23d72660' rx='5'/><text x='150' y='45' text-anchor='middle' fill='white' font-size='14' font-family='Arial'>護理排班系統</text><rect x='20' y='80' width='120' height='80' fill='%23ffb6d5' rx='5'/><rect x='160' y='80' width='120' height='80' fill='%23ffd6e0' rx='5'/><rect x='20' y='180' width='260' height='100' fill='%23fff0f6' rx='5'/><circle cx='60' cy='230' r='15' fill='%23d72660'/><text x='90' y='235' fill='%23d72660' font-size='12' font-family='Arial'>王護理師</text><circle cx='60' cy='260' r='15' fill='%23ffb6d5'/><text x='90' y='265' fill='%23d72660' font-size='12' font-family='Arial'>李護理師</text><rect x='20' y='300' width='260' height='80' fill='%23f8f9fa' rx='5'/><text x='150' y='345' text-anchor='middle' fill='%23d72660' font-size='16' font-family='Arial'>即時更新</text></svg>" 
+                             alt="手機版介面示意" class="img-fluid" style="max-width: 250px;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="py-5">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="section-title">客戶見證</h2>
+                <p class="section-subtitle">來自醫療機構的真實回饋</p>
+            </div>
+            <div class="row">
+                <div class="col-lg-4">
+                    <div class="testimonial-card">
+                        <div class="mb-3">
+                            <i class="fas fa-quote-left text-primary fa-2x"></i>
+                        </div>
+                        <p>"使用這套系統後，我們的排班效率提升了 90%，護理人員也更滿意工作安排，強烈推薦！"</p>
+                        <div class="d-flex align-items-center mt-3">
+                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                陳
+                            </div>
+                            <div class="ms-3">
+                                <strong>陳護理長</strong><br>
+                                <small class="text-muted">台北醫學中心</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="testimonial-card">
+                        <div class="mb-3">
+                            <i class="fas fa-quote-left text-primary fa-2x"></i>
+                        </div>
+                        <p>"智能排班功能真的很棒，考慮到每個人的偏好和限制，生成的班表非常合理。"</p>
+                        <div class="d-flex align-items-center mt-3">
+                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                林
+                            </div>
+                            <div class="ms-3">
+                                <strong>林主任</strong><br>
+                                <small class="text-muted">高雄榮總</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="testimonial-card">
+                        <div class="mb-3">
+                            <i class="fas fa-quote-left text-primary fa-2x"></i>
+                        </div>
+                        <p>"系統操作簡單直觀，即使不熟悉電腦的同事也能快速上手，節省了很多訓練時間。"</p>
+                        <div class="d-flex align-items-center mt-3">
+                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                王
+                            </div>
+                            <div class="ms-3">
+                                <strong>王副護理長</strong><br>
+                                <small class="text-muted">台中榮總</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-5" style="background: var(--accent-color);">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="section-title">選擇適合的方案</h2>
+                <p class="section-subtitle">彈性定價，滿足不同規模醫療機構需求</p>
+            </div>
+            <div class="row justify-content-center">
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="pricing-card">
+                        <h4>基礎版</h4>
+                        <div class="price">免費</div>
+                        <p class="text-muted">適合小型診所</p>
+                        <ul class="list-unstyled mt-4">
+                            <li><i class="fas fa-check text-success me-2"></i>最多 20 位護理人員</li>
+                            <li><i class="fas fa-check text-success me-2"></i>基本排班功能</li>
+                            <li><i class="fas fa-check text-success me-2"></i>班表查詢</li>
+                            <li><i class="fas fa-check text-success me-2"></i>CSV 匯出</li>
+                            <li><i class="fas fa-times text-muted me-2"></i>進階分析</li>
+                        </ul>
+                        <a href="#download" class="btn btn-outline-primary w-100 mt-4">立即下載</a>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="pricing-card featured">
+                        <h4>專業版</h4>
+                        <div class="price">NT$599<small>/月</small></div>
+                        <p class="text-muted">適合地區醫院</p>
+                        <ul class="list-unstyled mt-4">
+                            <li><i class="fas fa-check text-success me-2"></i>無限制護理人員</li>
+                            <li><i class="fas fa-check text-success me-2"></i>智能自動排班</li>
+                            <li><i class="fas fa-check text-success me-2"></i>進階分析報表</li>
+                            <li><i class="fas fa-check text-success me-2"></i>On Call 管理</li>
+                            <li><i class="fas fa-check text-success me-2"></i>技術支援</li>
+                        </ul>
+                        <a href="#download" class="btn btn-primary w-100 mt-4">開始試用</a>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="pricing-card">
+                        <h4>企業版</h4>
+                        <div class="price">客製化</div>
+                        <p class="text-muted">適合醫學中心</p>
+                        <ul class="list-unstyled mt-4">
+                            <li><i class="fas fa-check text-success me-2"></i>完全客製化</li>
+                            <li><i class="fas fa-check text-success me-2"></i>私有雲部署</li>
+                            <li><i class="fas fa-check text-success me-2"></i>API 整合</li>
+                            <li><i class="fas fa-check text-success me-2"></i>專屬客服</li>
+                            <li><i class="fas fa-check text-success me-2"></i>教育訓練</li>
+                        </ul>
+                        <a href="mailto:contact@nursingscheduler.com" class="btn btn-outline-primary w-100 mt-4">聯絡我們</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="py-5">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="section-title">立即開始使用</h2>
+                <p class="section-subtitle">100% 開源免費，完整原始碼都在 GitHub</p>
+            </div>
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="text-center">
+                        <div class="mb-4">
+                            <i class="fab fa-github" style="font-size: 4rem; color: var(--primary-color);"></i>
+                        </div>
+                        <h4 class="mb-4">從 GitHub 取得完整原始碼</h4>
+                        <p class="mb-4">
+                            我們的系統完全開源，您可以自由下載、修改、部署。
+                            包含完整的安裝說明文件、使用手冊、以及技術支援。
+                        </p>
+                        <div class="d-flex flex-wrap justify-content-center gap-3 mb-4">
+                            <a href="https://github.com/DavidLin729/NurseScheduler2" target="_blank" class="github-button">
+                                <i class="fab fa-github"></i>
+                                查看原始碼
+                            </a>
+                            <a href="https://github.com/DavidLin729/NurseScheduler2/archive/refs/heads/main.zip" class="btn btn-primary btn-lg">
+                                <i class="fas fa-download me-2"></i>
+                                下載 ZIP 檔案
+                            </a>
+                        </div>
+                        <div class="row text-start">
+                            <div class="col-md-6">
+                                <h5><i class="fas fa-terminal text-primary me-2"></i>快速安裝</h5>
+                                <div class="bg-dark text-light p-3 rounded">
+                                    <code>
+                                        git clone https://github.com/DavidLin729/NurseScheduler2.git<br>
+                                        cd NurseScheduler2<br>
+                                        pip install -r requirements.txt<br>
+                                        python app.py
+                                    </code>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h5><i class="fas fa-book text-primary me-2"></i>完整文件</h5>
+                                <ul class="list-unstyled">
+                                    <li><i class="fas fa-file-alt me-2 text-muted"></i>安裝指南</li>
+                                    <li><i class="fas fa-file-alt me-2 text-muted"></i>使用手冊</li>
+                                    <li><i class="fas fa-file-alt me-2 text-muted"></i>開發文件</li>
+                                    <li><i class="fas fa-file-alt me-2 text-muted"></i>API 說明</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4">
+                    <h5><i class="fas fa-heartbeat me-2"></i>護理排班系統</h5>
+                    <p>專業的護理人員排班管理解決方案，讓醫療機構的人力資源管理更加智能化、高效化。</p>
+                    <div class="d-flex gap-3">
+                        <a href="https://github.com/DavidLin729/NurseScheduler2" class="text-light">
+                            <i class="fab fa-github fa-lg"></i>
+                        </a>
+                        <a href="#" class="text-light">
+                            <i class="fab fa-linkedin fa-lg"></i>
+                        </a>
+                        <a href="#" class="text-light">
+                            <i class="fas fa-envelope fa-lg"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="col-lg-2">
+                    <h6>產品</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#features" class="text-light-50">功能特色</a></li>
+                        <li><a href="#pricing" class="text-light-50">價格方案</a></li>
+                        <li><a href="#download" class="text-light-50">立即下載</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2">
+                    <h6>支援</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-light-50">使用說明</a></li>
+                        <li><a href="#" class="text-light-50">API 文件</a></li>
+                        <li><a href="#" class="text-light-50">常見問題</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2">
+                    <h6>公司</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-light-50">關於我們</a></li>
+                        <li><a href="#" class="text-light-50">聯絡我們</a></li>
+                        <li><a href="#" class="text-light-50">隱私政策</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2">
+                    <h6>聯絡資訊</h6>
+                    <p class="text-light-50 mb-1">
+                        <i class="fas fa-envelope me-2"></i>
+                        support@nursingscheduler.com
+                    </p>
+                    <p class="text-light-50">
+                        <i class="fas fa-phone me-2"></i>
+                        +886-2-1234-5678
+                    </p>
+                </div>
+            </div>
+            <hr class="my-4" style="border-color: #495057;">
+            <div class="text-center">
+                <p class="mb-0">&copy; 2025 護理排班系統. All rights reserved. Made with ❤️ for healthcare professionals.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scroll to Top Button -->
+    <button class="scroll-to-top" onclick="scrollToTop()">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Show/hide scroll to top button
+        const scrollToTopButton = document.querySelector('.scroll-to-top');
+        window.addEventListener('scroll', () => {
+            if (window.pageYOffset > 300) {
+                scrollToTopButton.classList.add('show');
+            } else {
+                scrollToTopButton.classList.remove('show');
+            }
+        });
+
+        // Scroll to top function
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+
+        // Animate numbers in stats section
+        function animateStats() {
+            const stats = document.querySelectorAll('.stat-number');
+            stats.forEach(stat => {
+                const finalValue = stat.textContent;
+                const isPercent = finalValue.includes('%');
+                const numericValue = parseInt(finalValue.replace(/[^0-9]/g, ''));
+                
+                let currentValue = 0;
+                const increment = numericValue / 50;
+                
+                const timer = setInterval(() => {
+                    currentValue += increment;
+                    if (currentValue >= numericValue) {
+                        currentValue = numericValue;
+                        clearInterval(timer);
+                    }
+                    
+                    if (isPercent) {
+                        stat.textContent = Math.floor(currentValue) + '%';
+                    } else if (finalValue.includes('/')) {
+                        stat.textContent = '24/7';
+                    } else if (finalValue.includes('+')) {
+                        stat.textContent = Math.floor(currentValue) + '+';
+                    } else {
+                        stat.textContent = Math.floor(currentValue);
+                    }
+                }, 20);
+            });
+        }
+
+        // Trigger stats animation when stats section is visible
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    animateStats();
+                    observer.disconnect();
+                }
+            });
+        });
+
+        const statsSection = document.querySelector('.stats-section');
+        if (statsSection) {
+            observer.observe(statsSection);
+        }
+
+        // Add animation classes when elements come into view
+        const animateOnScroll = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.animationDelay = Math.random() * 0.5 + 's';
+                    entry.target.classList.add('animate__animated', 'animate__fadeInUp');
+                }
+            });
+        });
+
+        document.querySelectorAll('.feature-card, .testimonial-card, .pricing-card').forEach(el => {
+            animateOnScroll.observe(el);
+        });
+    </script>
+</body>
+</html> 
