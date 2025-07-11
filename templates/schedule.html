@@ -129,7 +129,7 @@
         </div>
     </div>
 
-    <form method="post" action="/auto_schedule" class="mb-3">
+    <form class="mb-3">
         <!-- 整月排班模式 -->
         <div id="monthModeSection" class="row g-3 align-items-end mb-3">
             <div class="col-auto">
@@ -220,14 +220,57 @@
             </div>
             <div class="col-auto">
                 <button type="button" class="btn btn-primary" id="submitBtn" onclick="startAutoScheduleWithValidation()">智能自動排班</button>
-                <button type="submit" class="btn btn-outline-secondary" id="basicSubmitBtn">基本自動排班</button>
             </div>
         </div>
     </form>
     
     <div class="alert alert-info mb-3">
-        <b>排班原則：</b>同一位員工從一個班別（如早班）轉換到另一個班別（如小夜班或大夜班），<br>
-        <b>中間必須間隔至少11小時</b>（所有班別間皆適用）。
+        <h5 class="mb-3"><i class="fas fa-info-circle"></i> 智能排班原則與規則</h5>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="text-primary">🌟 核心排班原則</h6>
+                <ul class="mb-3">
+                    <li><strong>班別間隔規則：</strong>員工轉換班別中間必須間隔至少11小時</li>
+                    <li><strong>每日班數限制：</strong>每人每日最多排班次數（預設1班）</li>
+                    <li><strong>連續上班限制：</strong>連續上班天數上限（預設5天）</li>
+                    <li><strong>月班數控制：</strong>每人每月班數上下限（預設22-30班）</li>
+                    <li><strong>大夜班特殊規則：</strong>大夜班連續天數與每月上限獨立控制</li>
+                </ul>
+                
+                <h6 class="text-success">✅ 四周變形工時規則</h6>
+                <ul class="mb-3">
+                    <li><strong>週工時限制：</strong>每人每週工時不超過40小時</li>
+                    <li><strong>例假日安排：</strong>每人每週固定一個例假日（預設週日）</li>
+                    <li><strong>休息日安排：</strong>每人每週隨機分配一個休息日</li>
+                    <li><strong>週日特殊規則：</strong>週日僅安排一位大夜班人員，其餘班別休假</li>
+                </ul>
+            </div>
+            
+            <div class="col-md-6">
+                <h6 class="text-warning">🎯 智能驗證機制</h6>
+                <ul class="mb-3">
+                    <li><strong>大夜班預先分配：</strong>確保預先分配的大夜班人員優先安排</li>
+                    <li><strong>休息日/例假日檢查：</strong>驗證每人每週休息安排符合規定</li>
+                    <li><strong>週班別一致性：</strong>每人每週最多安排2種班別，理想為1種</li>
+                    <li><strong>自動重新生成：</strong>最多重試10次直到符合所有驗證要求</li>
+                </ul>
+                
+                <h6 class="text-info">⚖️ 公平分配機制</h6>
+                <ul class="mb-3">
+                    <li><strong>班別公平分配：</strong>盡量平均分配各班別給所有員工</li>
+                    <li><strong>特殊偏好支援：</strong>支援特定人員的排班偏好設定</li>
+                    <li><strong>缺人自動標註：</strong>人力不足時自動標記"缺人值班"</li>
+                    <li><strong>On Call 整合：</strong>可整合假日 On Call 排程</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="alert alert-warning mt-3">
+            <strong><i class="fas fa-exclamation-triangle"></i> 重要提醒：</strong>
+            智能排班會自動檢查所有規則並重新生成直到符合標準，過程可能需要數秒至數分鐘，請耐心等候。
+            如果10次重試後仍無法符合所有規則，系統會顯示詳細的驗證失敗原因。
+        </div>
     </div>
 </div>
 
@@ -261,14 +304,12 @@ document.addEventListener('DOMContentLoaded', function() {
             monthInput.required = true;
             startDateInput.required = false;
             endDateInput.required = false;
-            submitBtn.textContent = '一鍵自動排班（產生整月）';
         } else {
             monthModeSection.style.display = 'none';
             customModeSection.style.display = 'flex';
             monthInput.required = false;
             startDateInput.required = true;
             endDateInput.required = true;
-            submitBtn.textContent = '一鍵自動排班（自訂日期範圍）';
         }
     }
 
@@ -291,34 +332,13 @@ document.addEventListener('DOMContentLoaded', function() {
     customMode.addEventListener('change', toggleScheduleMode);
     startDateInput.addEventListener('change', updateDateRangeInfo);
     endDateInput.addEventListener('change', updateDateRangeInfo);
-
-    // 表單驗證
-    document.querySelector('form').addEventListener('submit', function(e) {
-        if (customMode.checked) {
-            const startDate = new Date(startDateInput.value);
-            const endDate = new Date(endDateInput.value);
-            
-            if (startDate > endDate) {
-                e.preventDefault();
-                alert('起始日期不能大於結束日期！');
-                return false;
-            }
-            
-            if (endDate - startDate > 365 * 24 * 60 * 60 * 1000) {
-                e.preventDefault();
-                alert('排班日期範圍不能超過一年！');
-                return false;
-            }
-        }
-    });
 });
 
 // 智能自動排班函數（帶驗證機制）
 function startAutoScheduleWithValidation() {
     const form = document.querySelector('form');
     const submitBtn = document.getElementById('submitBtn');
-    const basicSubmitBtn = document.getElementById('basicSubmitBtn');
-    
+
     // 表單驗證
     if (!validateForm()) {
         return;
@@ -326,7 +346,6 @@ function startAutoScheduleWithValidation() {
     
     // 禁用按鈕
     submitBtn.disabled = true;
-    basicSubmitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>智能排班中...';
     
     // 顯示進度提示
@@ -373,7 +392,6 @@ function startAutoScheduleWithValidation() {
         // 恢復按鈕狀態
         setTimeout(() => {
             submitBtn.disabled = false;
-            basicSubmitBtn.disabled = false;
             submitBtn.innerHTML = '智能自動排班';
         }, 3000);
     });
