@@ -2545,5 +2545,131 @@ def batch_night_shift_allocation():
     
     return redirect(url_for('night_shift_allocation', start_date=start_date, end_date=end_date))
 
+@app.route('/export_staff_schedule_table', methods=['POST'])
+@login_required
+def export_staff_schedule_table():
+    """匯出員工橫式排班表為 CSV"""
+    today = datetime.today()
+    month = request.form.get('month', today.strftime('%Y-%m'))
+    start_date = request.form.get('start_date', '')
+    end_date = request.form.get('end_date', '')
+    
+    # 取得替代代碼設定
+    replacement_codes = {
+        '早班': request.form.get('morning_shift_code', '').strip(),
+        '小夜班': request.form.get('evening_shift_code', '').strip(),
+        '大夜班': request.form.get('night_shift_code', '').strip(),
+        '例假日': request.form.get('holiday_code', '').strip(),
+        '休息日': request.form.get('rest_day_code', '').strip(),
+        '': request.form.get('empty_code', '').strip(),  # 空白替代
+    }
+    
+    # 自訂班別替代
+    custom_shift_name = request.form.get('custom_shift_name', '').strip()
+    custom_shift_code = request.form.get('custom_shift_code', '').strip()
+    if custom_shift_name and custom_shift_code:
+        replacement_codes[custom_shift_name] = custom_shift_code
+    
+    def apply_replacement(text):
+        """套用文字替代規則"""
+        if not text:  # 處理空白或 None
+            return replacement_codes.get('', '') or ''
+        
+        # 檢查是否有對應的替代代碼
+        if text in replacement_codes and replacement_codes[text]:
+            return replacement_codes[text]
+        
+        return text
+    
+    # 決定查詢的日期範圍
+    if start_date and end_date:
+        # 使用自訂日期範圍
+        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        dates = []
+        current_date = start_obj
+        while current_date <= end_obj:
+            dates.append(current_date.strftime('%Y-%m-%d'))
+            current_date += timedelta(days=1)
+        filename_suffix = f"{start_date}_to_{end_date}"
+    else:
+        # 使用月份查詢
+        year, mon = map(int, month.split('-'))
+        days_in_month = monthrange(year, mon)[1]
+        dates = [f"{year}-{mon:02d}-{day:02d}" for day in range(1, days_in_month+1)]
+        filename_suffix = month
+    
+    # 計算每天的星期
+    weekday_map = ['一', '二', '三', '四', '五', '六', '日']
+    weekdays = [weekday_map[datetime.strptime(d, "%Y-%m-%d").weekday()] for d in dates]
+    
+    conn = get_db_connection()
+    staff_list = conn.execute('SELECT staff_id, name, title FROM staff').fetchall()
+    schedule = conn.execute('''
+        SELECT schedule.date, schedule.staff_id, shift.name as shift_name
+        FROM schedule
+        JOIN shift ON schedule.shift_id = shift.shift_id
+        WHERE schedule.date BETWEEN ? AND ?
+    ''', (dates[0], dates[-1])).fetchall()
+    conn.close()
+    
+    schedule_map = {}
+    for row in schedule:
+        schedule_map.setdefault(row['staff_id'], {})[row['date']] = row['shift_name']
+    
+    # 建立 CSV 內容
+    si = StringIO()
+    writer = csv.writer(si)
+    
+    # 寫入標題行
+    header = ['姓名', '職稱', '總工時', '累積未休時數']
+    for i, d in enumerate(dates):
+        header.append(f"{d[8:]}({weekdays[i]})")
+    writer.writerow(header)
+    
+    # 寫入資料行
+    for staff in staff_list:
+        row = [staff['name'], staff['title']]
+        total_hours = 0
+        leave_hours = 0  # 暫時設為0，可根據需求調整
+        
+        # 計算總工時並收集排班資料
+        shifts_data = []
+        for i, d in enumerate(dates):
+            shift = schedule_map.get(staff['staff_id'], {}).get(d, '')
+            if shift:
+                # 套用替代代碼
+                processed_shift = apply_replacement(shift)
+                shifts_data.append(processed_shift)
+                total_hours += 8
+            else:
+                # 根據星期判斷是例假日還是休息日
+                if weekdays[i] == '日':
+                    processed_text = apply_replacement('例假日')
+                    shifts_data.append(processed_text)
+                elif weekdays[i] == '六':
+                    processed_text = apply_replacement('休息日')
+                    shifts_data.append(processed_text)
+                else:
+                    processed_text = apply_replacement('休息日')
+                    shifts_data.append(processed_text)
+        
+        row.extend([total_hours, leave_hours])
+        row.extend(shifts_data)
+        writer.writerow(row)
+    
+    output = si.getvalue().encode('utf-8-sig')
+    
+    # 根據是否有使用替代代碼來調整檔名
+    has_replacement = any(code for code in replacement_codes.values() if code)
+    suffix = "_已替代" if has_replacement else ""
+    
+    return send_file(
+        BytesIO(output),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'員工橫式排班表_{filename_suffix}{suffix}.csv'
+    )
+
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=5001)
