@@ -159,28 +159,28 @@
             </thead>
             <tbody>
             {% if calendar_days %}
-                {% for day in calendar_days %}
+            {% for day in calendar_days %}
                     {% if day.weekday == '日' %}
                     <tr class="sunday-only">
-                        <td>{{ day.date }}</td>
-                        <td>{{ day.weekday }}</td>
-                        <td>
-                            {% for oncall in day.oncall_staff %}
-                                {% if oncall.status == 'oncall' %}
-                                    <span class="badge bg-primary">{{ oncall.staff_name }}</span>
-                                {% endif %}
-                            {% endfor %}
-                        </td>
-                        <td>
-                            {% for oncall in day.oncall_staff %}
-                                {% if oncall.status == 'backup' %}
-                                    <span class="badge bg-warning">{{ oncall.staff_name }}</span>
-                                {% endif %}
-                            {% endfor %}
-                        </td>
-                        <td>
+                    <td>{{ day.date }}</td>
+                    <td>{{ day.weekday }}</td>
+                    <td>
+                        {% for oncall in day.oncall_staff %}
+                            {% if oncall.status == 'oncall' %}
+                                <span class="badge bg-primary">{{ oncall.staff_name }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {% for oncall in day.oncall_staff %}
+                            {% if oncall.status == 'backup' %}
+                                <span class="badge bg-warning">{{ oncall.staff_name }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                    <td>
                             <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editOncallModal{{ day.date | replace('-', '') }}">編輯</button>
-                        </td>
+                    </td>
                     </tr>
                     {% endif %}
                 {% endfor %}

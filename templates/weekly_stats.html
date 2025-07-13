@@ -108,34 +108,34 @@
             </thead>
             <tbody>
             {% if stats %}
-                {% for stat in stats %}
-                    <tr class="{% if stat.total_hours > 40 %}over-limit{% elif stat.total_hours < 32 %}under-limit{% else %}normal{% endif %}">
-                        <td>{{ stat.staff_id }}</td>
-                        <td>{{ stat.staff_name }}</td>
+            {% for stat in stats %}
+                <tr class="{% if stat.total_hours > 40 %}over-limit{% elif stat.total_hours < 32 %}under-limit{% else %}normal{% endif %}">
+                    <td>{{ stat.staff_id }}</td>
+                    <td>{{ stat.staff_name }}</td>
                         <td>{{ stat.month }} 第{{ stat.week_number }}週</td>
-                        <td>{{ stat.total_hours }}小時</td>
-                        <td>{{ stat.work_days }}天</td>
-                        <td>{{ stat.holiday_count }}天</td>
-                        <td>{{ stat.rest_day_count }}天</td>
-                        <td>
-                            {% if stat.total_hours > 40 %}
-                                <span class="badge bg-danger">工時超限</span>
-                            {% elif stat.total_hours < 32 %}
-                                <span class="badge bg-warning">工時不足</span>
-                            {% else %}
-                                <span class="badge bg-success">正常</span>
-                            {% endif %}
-                            
-                            {% if config and config.require_holiday and stat.holiday_count == 0 %}
-                                <span class="badge bg-warning">缺少例假日</span>
-                            {% endif %}
-                            
-                            {% if config and config.require_rest_day and stat.rest_day_count == 0 %}
-                                <span class="badge bg-warning">缺少休息日</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
+                    <td>{{ stat.total_hours }}小時</td>
+                    <td>{{ stat.work_days }}天</td>
+                    <td>{{ stat.holiday_count }}天</td>
+                    <td>{{ stat.rest_day_count }}天</td>
+                    <td>
+                        {% if stat.total_hours > 40 %}
+                            <span class="badge bg-danger">工時超限</span>
+                        {% elif stat.total_hours < 32 %}
+                            <span class="badge bg-warning">工時不足</span>
+                        {% else %}
+                            <span class="badge bg-success">正常</span>
+                        {% endif %}
+                        
+                        {% if config and config.require_holiday and stat.holiday_count == 0 %}
+                            <span class="badge bg-warning">缺少例假日</span>
+                        {% endif %}
+                        
+                        {% if config and config.require_rest_day and stat.rest_day_count == 0 %}
+                            <span class="badge bg-warning">缺少休息日</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
             {% else %}
                 <tr>
                     <td colspan="8" class="text-center text-muted py-4">
