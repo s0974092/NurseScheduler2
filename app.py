@@ -880,9 +880,9 @@ def auto_schedule():
     
     # 例假（週日固定）
     for sid in staff_holidays:
-        for w in range(1, total_weeks + 1):
+        for w in range(1, total_weeks + 1):  # 需要縮排
             start_idx = (w-1)*7
-            end_idx = min(w*7, len(dates))  # 避免超出範圍
+            end_idx = min(w*7, len(dates))
             week_dates = dates[start_idx : end_idx]
             for d in week_dates:
                 if datetime.strptime(d, '%Y-%m-%d').weekday() == 6:
@@ -918,7 +918,7 @@ def auto_schedule():
                 # 計算每位員工的 On Call 次數（本月）
                 current_month = date[:7]
                 oncall_counts = {}
-    for s in staff_list:
+                for s in staff_list:
                     count = conn.execute(
                         'SELECT COUNT(*) FROM oncall_schedule WHERE staff_id = ? AND date LIKE ?',
                         (s['staff_id'], f"{current_month}%")
@@ -996,7 +996,7 @@ def auto_schedule():
                     assigned = candidates[:required]
                     for c in assigned:
                         s   = c[0]
-                sid = s['staff_id']
+                        sid = s['staff_id']
                         st  = staff_status[sid]
 
                         # 更新狀態
@@ -1024,7 +1024,7 @@ def auto_schedule():
                         worked_today.add(sid)
                     
                     # 大夜班預先分配已完成，跳到下一個班別
-                            continue
+                    continue
                         
             # 篩選可用員工（排除已預先分配的員工）
             for s in staff_list:
@@ -1066,9 +1066,9 @@ def auto_schedule():
                                 # 節假日與休息日檢查
                 if not is_night:
                     if staff_holidays[sid].get(week_of_month) == date:
-                    continue
+                        continue
                     if staff_restdays[sid].get(week_of_month) == date:
-                    continue
+                        continue
 
                 # 次數、工時、間隔等檢查（與原邏輯相同）
                 if st['count'] >= max_per_month:
@@ -1114,12 +1114,12 @@ def auto_schedule():
                         c[1], 
                         c[2]
                     ))
-            else:
-                # 保留原本隨機但分組邏輯，但預先分配仍然優先
-                pre_allocated = [c for c in candidates if c[3] == -1]
-                others = [c for c in candidates if c[3] != -1]
-                random.shuffle(others)
-                candidates = pre_allocated + others
+        else:
+            # 保留原本隨機但分組邏輯，但預先分配仍然優先
+            pre_allocated = [c for c in candidates if c[3] == -1]
+            others = [c for c in candidates if c[3] != -1]
+            random.shuffle(others)
+            candidates = pre_allocated + others
 
             # 指派
             assigned = candidates[:required]
@@ -1337,221 +1337,215 @@ def execute_auto_schedule_logic(dates, months, total_weeks, max_per_day, max_con
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     operator = session.get('username', 'system')
     
-    try:
-        # 清除舊排班
-        for m in months:
-            conn.execute('DELETE FROM schedule WHERE date LIKE ?', (f"{m}%",))
-            conn.execute('DELETE FROM weekly_work_stats WHERE month = ?', (m,))
+    # 清除舊排班
+    for m in months:
+        conn.execute('DELETE FROM schedule WHERE date LIKE ?', (f"{m}%",))
+        conn.execute('DELETE FROM weekly_work_stats WHERE month = ?', (m,))
+    
+    # 讀取資料
+    shifts = conn.execute('SELECT * FROM shift').fetchall()
+    staff = conn.execute('SELECT * FROM staff').fetchall()
+    staff_list = [dict(s) for s in staff]
+    
+    # 建立每日需求人數字典
+    daily_requirements = {}
+    for shift in shifts:
+        sid = shift['shift_id']
+        daily_requirements[sid] = {}
+        for dow in range(1, 8):
+            req = conn.execute(
+                'SELECT required_count FROM shift_daily_requirements WHERE shift_id = ? AND day_of_week = ?',
+                (sid, dow)
+            ).fetchone()
+            daily_requirements[sid][dow] = req['required_count'] if req else shift['required_count']
+    
+    # 讀取大夜班預先分配
+    night_shift_allocations = {}
+    start_date = dates[0] if dates else None
+    end_date = dates[-1] if dates else None
+    
+    if start_date and end_date:
+        allocations = conn.execute('''
+            SELECT * FROM night_shift_allocation 
+            WHERE (start_date <= ? AND end_date >= ?) OR 
+                  (start_date >= ? AND start_date <= ?) OR
+                  (end_date >= ? AND end_date <= ?)
+            ORDER BY start_date, staff_id
+        ''', (end_date, start_date, start_date, end_date, start_date, end_date)).fetchall()
         
-        # 讀取資料
-        shifts = conn.execute('SELECT * FROM shift').fetchall()
-        staff = conn.execute('SELECT * FROM staff').fetchall()
-        staff_list = [dict(s) for s in staff]
-        
-        # 建立每日需求人數字典
-        daily_requirements = {}
-        for shift in shifts:
-            sid = shift['shift_id']
-            daily_requirements[sid] = {}
-            for dow in range(1, 8):
-                req = conn.execute(
-                    'SELECT required_count FROM shift_daily_requirements WHERE shift_id = ? AND day_of_week = ?',
-                    (sid, dow)
-                ).fetchone()
-                daily_requirements[sid][dow] = req['required_count'] if req else shift['required_count']
-        
-        # 讀取大夜班預先分配
-        night_shift_allocations = {}
-        start_date = dates[0] if dates else None
-        end_date = dates[-1] if dates else None
-        
-        if start_date and end_date:
-            allocations = conn.execute('''
-                SELECT * FROM night_shift_allocation 
-                WHERE (start_date <= ? AND end_date >= ?) OR 
-                      (start_date >= ? AND start_date <= ?) OR
-                      (end_date >= ? AND end_date <= ?)
-                ORDER BY start_date, staff_id
-            ''', (end_date, start_date, start_date, end_date, start_date, end_date)).fetchall()
+        for allocation in allocations:
+            alloc_start = allocation['start_date']
+            alloc_end = allocation['end_date']
+            staff_id = allocation['staff_id']
+            shift_id = allocation['shift_id']
             
-            for allocation in allocations:
-                alloc_start = allocation['start_date']
-                alloc_end = allocation['end_date']
-                staff_id = allocation['staff_id']
-                shift_id = allocation['shift_id']
-                
-                current_date = datetime.strptime(alloc_start, '%Y-%m-%d')
-                end_date_obj = datetime.strptime(alloc_end, '%Y-%m-%d')
-                
-                while current_date <= end_date_obj:
-                    date_str = current_date.strftime('%Y-%m-%d')
-                    if date_str in dates:
-                        if date_str not in night_shift_allocations:
-                            night_shift_allocations[date_str] = []
-                        night_shift_allocations[date_str].append((staff_id, shift_id))
-                    current_date += timedelta(days=1)
-        
-        # 簡化的排班邏輯：隨機分配但滿足基本約束
-        staff_status = {
-            s['staff_id']: {
-                'count': 0,
-                'shift_counts': {},
-                'weekly_shifts': {w: set() for w in range(1, total_weeks + 1)},
-                'weekly_hours': {w: 0 for w in range(1, total_weeks + 1)},
-                'holiday_days': {w: 0 for w in range(1, total_weeks + 1)},
-                'rest_days': {w: 0 for w in range(1, total_weeks + 1)},
-                'worked_days': {w: 0 for w in range(1, total_weeks + 1)},
-            }
-            for s in staff_list
+            current_date = datetime.strptime(alloc_start, '%Y-%m-%d')
+            end_date_obj = datetime.strptime(alloc_end, '%Y-%m-%d')
+            
+            while current_date <= end_date_obj:
+                date_str = current_date.strftime('%Y-%m-%d')
+                if date_str in dates:
+                    if date_str not in night_shift_allocations:
+                        night_shift_allocations[date_str] = []
+                    night_shift_allocations[date_str].append((staff_id, shift_id))
+                current_date += timedelta(days=1)
+    
+    # 簡化的排班邏輯：隨機分配但滿足基本約束
+    staff_status = {
+        s['staff_id']: {
+            'count': 0,
+            'shift_counts': {},
+            'weekly_shifts': {w: set() for w in range(1, total_weeks + 1)},
+            'weekly_hours': {w: 0 for w in range(1, total_weeks + 1)},
+            'holiday_days': {w: 0 for w in range(1, total_weeks + 1)},
+            'rest_days': {w: 0 for w in range(1, total_weeks + 1)},
+            'worked_days': {w: 0 for w in range(1, total_weeks + 1)},
         }
+        for s in staff_list
+    }
+    
+    # 計算每週例假與休息日
+    staff_holidays = {s['staff_id']: {} for s in staff_list}
+    staff_restdays = {s['staff_id']: {} for s in staff_list}
+    
+    for sid in staff_holidays:
+        for w in range(1, total_weeks + 1):  # 需要縮排
+            start_idx = (w-1)*7
+            end_idx = min(w*7, len(dates))
+            week_dates = dates[start_idx : end_idx]
+            # 週日例假
+            for d in week_dates:
+                if datetime.strptime(d, '%Y-%m-%d').weekday() == 6:
+                    staff_holidays[sid][w] = d
+                    break
+            # 週一到週六隨機休息日
+            choices = [d for d in week_dates if datetime.strptime(d, '%Y-%m-%d').weekday() < 6]
+            if choices:
+                staff_restdays[sid][w] = random.choice(choices)
+    
+    # 每日排班
+    for idx, date in enumerate(dates):
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        week_of_month = (idx // 7) + 1
+        dow = date_obj.weekday() + 1
+        worked_today = set()
         
-        # 計算每週例假與休息日
-        staff_holidays = {s['staff_id']: {} for s in staff_list}
-        staff_restdays = {s['staff_id']: {} for s in staff_list}
+        # 班別處理順序：大夜班優先
+        shifts_ordered = []
+        night_shifts_with_allocation = []
+        other_shifts = []
         
-        for sid in staff_holidays:
-        for w in range(1, total_weeks + 1):
-                start_idx = (w-1)*7
-                end_idx = min(w*7, len(dates))
-                week_dates = dates[start_idx : end_idx]
-                # 週日例假
-                for d in week_dates:
-                    if datetime.strptime(d, '%Y-%m-%d').weekday() == 6:
-                        staff_holidays[sid][w] = d
-                        break
-                # 週一到週六隨機休息日
-                choices = [d for d in week_dates if datetime.strptime(d, '%Y-%m-%d').weekday() < 6]
-                if choices:
-                    staff_restdays[sid][w] = random.choice(choices)
+        for shift in shifts:
+            is_night = '大夜' in shift['name']
+            if is_night and date in night_shift_allocations:
+                night_shifts_with_allocation.append(shift)
+            elif is_night:
+                other_shifts.insert(0, shift)
+        else:
+                other_shifts.append(shift)
         
-        # 每日排班
-        for idx, date in enumerate(dates):
-            date_obj = datetime.strptime(date, '%Y-%m-%d')
-            week_of_month = (idx // 7) + 1
-            dow = date_obj.weekday() + 1
-            worked_today = set()
+        shifts_ordered = night_shifts_with_allocation + other_shifts
+        
+        for shift in shifts_ordered:
+            sid_shift = shift['shift_id']
+            required = daily_requirements[sid_shift][dow]
+            ward = shift['ward']
+            is_night = '大夜' in shift['name']
+            candidates = []
             
-            # 班別處理順序：大夜班優先
-            shifts_ordered = []
-            night_shifts_with_allocation = []
-            other_shifts = []
+            # 處理大夜班預先分配
+            night_allocations = night_shift_allocations.get(date, [])
+            pre_allocated_staff_ids = set()
             
-            for shift in shifts:
-                is_night = '大夜' in shift['name']
-                if is_night and date in night_shift_allocations:
-                    night_shifts_with_allocation.append(shift)
-                elif is_night:
-                    other_shifts.insert(0, shift)
+            if is_night and night_allocations:
+                for staff_id, allocated_shift_id in night_allocations:
+                    if allocated_shift_id == sid_shift:
+                        allocated_staff = next((s for s in staff_list if s['staff_id'] == staff_id), None)
+                        if allocated_staff and allocated_staff['ward'] == ward:
+                            st = staff_status[staff_id]
+                            if st['shift_counts'].get(date, 0) < max_per_day:
+                                candidates.append((allocated_staff, st['count'], st['shift_counts'].get(sid_shift, 0), -1))
+                                pre_allocated_staff_ids.add(staff_id)
+                
+            # 如果預先分配已滿足需求，直接指派
+            if len(candidates) >= required:
+                assigned = candidates[:required]
             else:
-                    other_shifts.append(shift)
-            
-            shifts_ordered = night_shifts_with_allocation + other_shifts
-            
-            for shift in shifts_ordered:
-                sid_shift = shift['shift_id']
-                required = daily_requirements[sid_shift][dow]
-                ward = shift['ward']
-                is_night = '大夜' in shift['name']
-                candidates = []
-                
-                # 處理大夜班預先分配
-                night_allocations = night_shift_allocations.get(date, [])
-                pre_allocated_staff_ids = set()
-                
-                if is_night and night_allocations:
-                    for staff_id, allocated_shift_id in night_allocations:
-                        if allocated_shift_id == sid_shift:
-                            allocated_staff = next((s for s in staff_list if s['staff_id'] == staff_id), None)
-                            if allocated_staff and allocated_staff['ward'] == ward:
-                                st = staff_status[staff_id]
-                                if st['shift_counts'].get(date, 0) < max_per_day:
-                                    candidates.append((allocated_staff, st['count'], st['shift_counts'].get(sid_shift, 0), -1))
-                                    pre_allocated_staff_ids.add(staff_id)
-                
-                # 如果預先分配已滿足需求，直接指派
-                if len(candidates) >= required:
-                    assigned = candidates[:required]
-                else:
-                    # 篩選其他可用員工
-                    for s in staff_list:
-                        sid = s['staff_id']
-                        if s['ward'] != ward or sid in pre_allocated_staff_ids:
-                            continue
-                        
-                        st = staff_status[sid]
-                        
-                        # 基本約束檢查
-                        if st['shift_counts'].get(date, 0) >= max_per_day:
-                            continue
-                        if not is_night:
-                            if staff_holidays[sid].get(week_of_month) == date:
-                                continue
-                            if staff_restdays[sid].get(week_of_month) == date:
-                                continue
-                        
-                        # 週班別一致性評分
-                        week_consistency_score = 0
-                        if week_shift_consistency:
-                            current_week_shifts = st['weekly_shifts'][week_of_month]
-                            if current_week_shifts:
-                                if sid_shift in current_week_shifts:
-                                    week_consistency_score = 0
-                                else:
-                                    week_consistency_score = 1
-                        
-                        candidates.append((s, st['count'], st['shift_counts'].get(sid_shift, 0), week_consistency_score))
-                    
-                    # 排序候選人
-                    candidates.sort(key=lambda c: (
-                        0 if c[3] == -1 else 1,  # 預先分配最優先
-                        c[3] if c[3] != -1 else 0,  # 週班別一致性
-                        c[1],  # 總班數
-                        c[2]   # 該班別次數
-                    ))
-                    
-                    assigned = candidates[:required]
-                
-                # 指派並更新狀態
-                for c in assigned:
-                    s = c[0]
+                # 篩選其他可用員工
+                for s in staff_list:
                     sid = s['staff_id']
+                    if s['ward'] != ward or sid in pre_allocated_staff_ids:
+                        continue
+                    
                     st = staff_status[sid]
                     
-                    st['count'] += 1
-                    st['shift_counts'][sid_shift] = st['shift_counts'].get(sid_shift, 0) + 1
-                    st['shift_counts'][date] = st['shift_counts'].get(date, 0) + 1
-                    st['weekly_shifts'][week_of_month].add(sid_shift)
-                    st['weekly_hours'][week_of_month] += 8
-                    st['worked_days'][week_of_month] += 1
+                    # 基本約束檢查
+                    if st['shift_counts'].get(date, 0) >= max_per_day:
+                        continue
+                    if not is_night:
+                        if staff_holidays[sid].get(week_of_month) == date:
+                            continue
+                        if staff_restdays[sid].get(week_of_month) == date:
+                            continue
+                    
+                    # 週班別一致性評分
+                    week_consistency_score = 0
+                    if week_shift_consistency:
+                        current_week_shifts = st['weekly_shifts'][week_of_month]
+                        if current_week_shifts:
+                            if sid_shift in current_week_shifts:
+                                week_consistency_score = 0
+                            else:
+                                week_consistency_score = 1
+                    
+                    candidates.append((s, st['count'], st['shift_counts'].get(sid_shift, 0), week_consistency_score))
+                
+                # 排序候選人
+                candidates.sort(key=lambda c: (
+                    0 if c[3] == -1 else 1,  # 預先分配最優先
+                    c[3] if c[3] != -1 else 0,  # 週班別一致性
+                    c[1],  # 總班數
+                    c[2]   # 該班別次數
+                ))
+                
+                assigned = candidates[:required]
             
-            conn.execute(
-                        '''INSERT INTO schedule
-                           (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (date, sid_shift, sid, 8, 1, operator, now_str, now_str)
-                    )
-            worked_today.add(sid)
+            # 指派並更新狀態
+            for c in assigned:
+                s = c[0]
+                sid = s['staff_id']
+                st = staff_status[sid]
+                
+                st['count'] += 1
+                st['shift_counts'][sid_shift] = st['shift_counts'].get(sid_shift, 0) + 1
+                st['shift_counts'][date] = st['shift_counts'].get(date, 0) + 1
+                st['weekly_shifts'][week_of_month].add(sid_shift)
+                st['weekly_hours'][week_of_month] += 8
+                st['worked_days'][week_of_month] += 1
+        
+        conn.execute(
+                    '''INSERT INTO schedule
+                       (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (date, sid_shift, sid, 8, 1, operator, now_str, now_str)
+                )
+        worked_today.add(sid)
     
     conn.commit()
         
         # 驗證結果
-        is_valid, validation_results = validate_schedule_requirements(
-            dates, staff_list, shifts, night_shift_allocations, total_weeks
-        )
-        
-        result = {
-            'success': is_valid,
-            'validation_results': validation_results,
-            'redirect_url': url_for('calendar_view', month=months[0]) if is_valid else None
-        }
-        
-        return result
-        
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-    conn.close()
+    # 驗證結果
+    is_valid, validation_results = validate_schedule_requirements(
+        dates, staff_list, shifts, night_shift_allocations, total_weeks
+    )
+    
+    result = {
+        'success': is_valid,
+        'validation_results': validation_results,
+        'redirect_url': url_for('calendar_view', month=months[0]) if is_valid else None
+    }
+    
+    return result
 
 @app.route('/export_schedule', methods=['POST'])
 @login_required
@@ -2176,7 +2170,7 @@ def oncall_manage():
                     })
         else:
             # 無人員篩選，使用原本的函數
-    calendar_days = generate_calendar_days(current_month)
+            calendar_days = generate_calendar_days(current_month)
             # 計算該月星期天數量
             for day in calendar_days:
                 if day['weekday'] == '日':
@@ -2277,25 +2271,25 @@ def batch_oncall():
     try:
         # 取得該月所有星期天日期
         sunday_dates = get_weekend_dates(month)  # 現在只返回星期天
-            
-            # 取得所有人員
-            staff_list = conn.execute('SELECT staff_id FROM staff').fetchall()
-            
+        
+        # 取得所有人員
+        staff_list = conn.execute('SELECT staff_id FROM staff').fetchall()
+        
         if not staff_list:
             flash('沒有可分配的人員', 'warning')
             return redirect(url_for('oncall_manage'))
         
         # 為每個星期天分配 On Call 人員（輪流分配）
         for i, date in enumerate(sunday_dates):
-                staff_index = i % len(staff_list)
-                staff_id = staff_list[staff_index]['staff_id']
-                
+            staff_index = i % len(staff_list)
+            staff_id = staff_list[staff_index]['staff_id']
+            
             # 檢查是否已存在該日期的 On Call 設定
             existing = conn.execute('SELECT id FROM oncall_schedule WHERE date = ?', (date,)).fetchone()
-                
-                if not existing:
-                    conn.execute('INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
-                               (date, staff_id, 'oncall'))
+            
+            if not existing:
+                conn.execute('INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
+                           (date, staff_id, 'oncall'))
             print(f"批次設定 {date} 星期天 On Call: {staff_id}")
         
         conn.commit()
