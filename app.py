@@ -241,6 +241,21 @@ def init_db():
         UNIQUE(staff_id, month, week_number)
     )''')
     
+    # 新增：請假管理表
+    c.execute('''CREATE TABLE IF NOT EXISTS leave_schedule (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_id TEXT NOT NULL,
+        leave_type TEXT NOT NULL,  -- 請假假別：事假、病假、特休、婚假、喪假、產假、陪產假、其他
+        start_date TEXT NOT NULL,  -- 起始日期 YYYY-MM-DD
+        end_date TEXT NOT NULL,    -- 結束日期 YYYY-MM-DD
+        reason TEXT,               -- 請假原因（可選）
+        approved BOOLEAN DEFAULT 1, -- 是否核准（預設核准）
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        operator_id TEXT,          -- 操作者
+        FOREIGN KEY (staff_id) REFERENCES staff (staff_id)
+    )''')
+    
     # 檢查是否已有 admin 帳號，若無則建立預設管理員
     admin = c.execute('SELECT * FROM user WHERE username = ?', ('admin',)).fetchone()
     if not admin:
@@ -729,7 +744,7 @@ def auto_schedule():
             return redirect(url_for('schedule'))
         
     # ---------- 統一產生 dates & months 清單 ----------
-        dates = []
+    dates = []
     cur = start_date_obj
     while cur <= end_date_obj:
         dates.append(cur.strftime('%Y-%m-%d'))
@@ -1026,15 +1041,24 @@ def auto_schedule():
                     # 大夜班預先分配已完成，跳到下一個班別
                     continue
                         
-            # 篩選可用員工（排除已預先分配的員工）
+                        # 篩選可用員工（排除已預先分配的員工）
             for s in staff_list:
                 sid = s['staff_id']
                 if s['ward'] != ward:
-                                    continue
+                    continue
                 # 跳過已經在預先分配中的員工，避免重複
                 if sid in pre_allocated_staff_ids:
-                                    continue
+                    continue
                 st = staff_status[sid]
+
+                # 🚨 第一優先：請假檢查 - 如果該員工在此日期請假，則跳過
+                leave_check = conn.execute('''
+                    SELECT COUNT(*) FROM leave_schedule 
+                    WHERE staff_id = ? AND start_date <= ? AND end_date >= ? AND approved = 1
+                ''', (sid, date, date)).fetchone()[0]
+                
+                if leave_check > 0:
+                    continue  # 該員工在此日期有請假，跳過
 
                 # 偏好檢查 - 根據日期月份查找偏好設定
                 date_month = date[:7]  # 取得日期的年-月部分
@@ -1107,19 +1131,19 @@ def auto_schedule():
                         c[1],  # 總班數
                         c[2]   # 該班別次數
                     ))
-            else:
+                else:
                     candidates.sort(key=lambda c: (
                         0 if c[3] == -1 else 1,  # 預先分配最優先
                         0 if preferences.get((c[0]['staff_id'], date_month)) else 1, 
                         c[1], 
                         c[2]
                     ))
-        else:
-            # 保留原本隨機但分組邏輯，但預先分配仍然優先
-            pre_allocated = [c for c in candidates if c[3] == -1]
-            others = [c for c in candidates if c[3] != -1]
-            random.shuffle(others)
-            candidates = pre_allocated + others
+            else:
+                # 保留原本隨機但分組邏輯，但預先分配仍然優先
+                pre_allocated = [c for c in candidates if c[3] == -1]
+                others = [c for c in candidates if c[3] != -1]
+                random.shuffle(others)
+                candidates = pre_allocated + others
 
             # 指派
             assigned = candidates[:required]
@@ -1441,7 +1465,7 @@ def execute_auto_schedule_logic(dates, months, total_weeks, max_per_day, max_con
                 night_shifts_with_allocation.append(shift)
             elif is_night:
                 other_shifts.insert(0, shift)
-        else:
+            else:
                 other_shifts.append(shift)
         
         shifts_ordered = night_shifts_with_allocation + other_shifts
@@ -1478,6 +1502,15 @@ def execute_auto_schedule_logic(dates, months, total_weeks, max_per_day, max_con
                         continue
                     
                     st = staff_status[sid]
+                    
+                    # 🚨 第一優先：請假檢查 - 如果該員工在此日期請假，則跳過
+                    leave_check = conn.execute('''
+                        SELECT COUNT(*) FROM leave_schedule 
+                        WHERE staff_id = ? AND start_date <= ? AND end_date >= ? AND approved = 1
+                    ''', (sid, date, date)).fetchone()[0]
+                    
+                    if leave_check > 0:
+                        continue  # 該員工在此日期有請假，跳過
                     
                     # 基本約束檢查
                     if st['shift_counts'].get(date, 0) >= max_per_day:
@@ -1522,18 +1555,17 @@ def execute_auto_schedule_logic(dates, months, total_weeks, max_per_day, max_con
                 st['weekly_shifts'][week_of_month].add(sid_shift)
                 st['weekly_hours'][week_of_month] += 8
                 st['worked_days'][week_of_month] += 1
-        
-        conn.execute(
+                
+                conn.execute(
                     '''INSERT INTO schedule
                        (date, shift_id, staff_id, work_hours, is_auto, operator_id, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
                     (date, sid_shift, sid, 8, 1, operator, now_str, now_str)
                 )
-        worked_today.add(sid)
+                worked_today.add(sid)
     
     conn.commit()
-        
-        # 驗證結果
+    
     # 驗證結果
     is_valid, validation_results = validate_schedule_requirements(
         dates, staff_list, shifts, night_shift_allocations, total_weeks
@@ -2538,6 +2570,286 @@ def batch_night_shift_allocation():
         conn.close()
     
     return redirect(url_for('night_shift_allocation', start_date=start_date, end_date=end_date))
+
+# 新增：請假管理頁面
+@app.route('/leave_manage')
+@login_required
+@admin_required
+def leave_manage():
+    # 取得查詢參數
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    staff_filter = request.args.get('staff_filter', '')
+    leave_type_filter = request.args.get('leave_type_filter', '')
+    
+    # 預設顯示本月起往後三個月的請假
+    if not start_date:
+        today = datetime.now()
+        start_date = today.strftime('%Y-%m-%d')
+        end_date = (today + timedelta(days=90)).strftime('%Y-%m-%d')
+    
+    conn = get_db_connection()
+    
+    # 建立查詢條件
+    query = '''
+        SELECT ls.*, s.name as staff_name
+        FROM leave_schedule ls
+        JOIN staff s ON ls.staff_id = s.staff_id
+        WHERE 1=1
+    '''
+    params = []
+    
+    if start_date and end_date:
+        query += ' AND ((ls.start_date <= ? AND ls.end_date >= ?) OR (ls.start_date >= ? AND ls.start_date <= ?))'
+        params.extend([end_date, start_date, start_date, end_date])
+    
+    if staff_filter:
+        query += ' AND ls.staff_id = ?'
+        params.append(staff_filter)
+    
+    if leave_type_filter:
+        query += ' AND ls.leave_type = ?'
+        params.append(leave_type_filter)
+    
+    query += ' ORDER BY ls.start_date DESC, s.staff_id'
+    
+    # 取得請假資料
+    leaves_raw = conn.execute(query, params).fetchall()
+    
+    # 轉換為列表並計算請假天數
+    leaves = []
+    for leave in leaves_raw:
+        leave_dict = dict(leave)
+        # 計算請假天數
+        start_date_obj = datetime.strptime(leave['start_date'], '%Y-%m-%d')
+        end_date_obj = datetime.strptime(leave['end_date'], '%Y-%m-%d')
+        leave_days = (end_date_obj - start_date_obj).days + 1
+        leave_dict['leave_days'] = leave_days
+        leaves.append(leave_dict)
+    
+    # 取得員工清單
+    staff_list = conn.execute('SELECT staff_id, name FROM staff ORDER BY name').fetchall()
+    
+    # 請假假別選項
+    leave_types = ['事假', '病假', '特休', '婚假', '喪假', '產假', '陪產假', '其他']
+    
+    conn.close()
+    
+    return render_template('leave_manage.html', 
+                         leaves=leaves,
+                         staff_list=staff_list,
+                         leave_types=leave_types,
+                         start_date=start_date,
+                         end_date=end_date,
+                         staff_filter=staff_filter,
+                         leave_type_filter=leave_type_filter)
+
+# 新增：新增請假記錄
+@app.route('/add_leave', methods=['POST'])
+@login_required
+@admin_required
+def add_leave():
+    staff_id = request.form['staff_id']
+    leave_type = request.form['leave_type']
+    start_date = request.form['start_date']
+    end_date = request.form['end_date']
+    reason = request.form.get('reason', '')
+    approved = request.form.get('approved', '1') == '1'
+    
+    # 驗證日期
+    try:
+        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        if start_obj > end_obj:
+            flash('起始日期不能大於結束日期', 'danger')
+            return redirect(url_for('leave_manage'))
+            
+    except ValueError:
+        flash('日期格式錯誤', 'danger')
+        return redirect(url_for('leave_manage'))
+    
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            INSERT INTO leave_schedule 
+            (staff_id, leave_type, start_date, end_date, reason, approved, operator_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (staff_id, leave_type, start_date, end_date, reason, approved, 
+              session.get('username', 'system'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        
+        conn.commit()
+        flash('請假記錄新增成功', 'success')
+    except Exception as e:
+        flash(f'新增失敗：{str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('leave_manage'))
+
+# 新增：編輯請假記錄
+@app.route('/edit_leave', methods=['POST'])
+@login_required
+@admin_required
+def edit_leave():
+    leave_id = request.form['leave_id']
+    staff_id = request.form['staff_id']
+    leave_type = request.form['leave_type']
+    start_date = request.form['start_date']
+    end_date = request.form['end_date']
+    reason = request.form.get('reason', '')
+    approved = request.form.get('approved', '1') == '1'
+    
+    # 驗證日期
+    try:
+        start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        if start_obj > end_obj:
+            flash('起始日期不能大於結束日期', 'danger')
+            return redirect(url_for('leave_manage'))
+            
+    except ValueError:
+        flash('日期格式錯誤', 'danger')
+        return redirect(url_for('leave_manage'))
+    
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            UPDATE leave_schedule 
+            SET staff_id = ?, leave_type = ?, start_date = ?, end_date = ?, 
+                reason = ?, approved = ?, operator_id = ?, updated_at = ?
+            WHERE id = ?
+        ''', (staff_id, leave_type, start_date, end_date, reason, approved,
+              session.get('username', 'system'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+              leave_id))
+        
+        conn.commit()
+        flash('請假記錄更新成功', 'success')
+    except Exception as e:
+        flash(f'更新失敗：{str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('leave_manage'))
+
+# 新增：刪除請假記錄
+@app.route('/delete_leave', methods=['POST'])
+@login_required
+@admin_required
+def delete_leave():
+    leave_id = request.form['leave_id']
+    
+    conn = get_db_connection()
+    try:
+        conn.execute('DELETE FROM leave_schedule WHERE id = ?', (leave_id,))
+        conn.commit()
+        flash('請假記錄刪除成功', 'success')
+    except Exception as e:
+        flash(f'刪除失敗：{str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('leave_manage'))
+
+# 新增：下載請假模板
+@app.route('/download_leave_template')
+@login_required
+@admin_required
+def download_leave_template():
+    si = StringIO()
+    writer = csv.writer(si)
+    writer.writerow(['staff_id', 'leave_type', 'start_date', 'end_date', 'reason'])
+    writer.writerow(['N001', '特休', '2024-07-01', '2024-07-03', '休假旅遊'])
+    writer.writerow(['N002', '病假', '2024-07-05', '2024-07-05', '身體不適'])
+    writer.writerow(['N003', '事假', '2024-07-10', '2024-07-12', '處理私事'])
+    output = si.getvalue().encode('utf-8-sig')
+    return send_file(
+        BytesIO(output),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='leave_template.csv'
+    )
+
+# 新增：批次上傳請假資料
+@app.route('/upload_leave', methods=['POST'])
+@login_required
+@admin_required
+def upload_leave():
+    file = request.files.get('file')
+    if not file:
+        flash('請選擇檔案', 'danger')
+        return redirect(url_for('leave_manage'))
+    
+    try:
+        stream = StringIO(file.stream.read().decode('utf-8-sig'))
+        reader = csv.DictReader(stream)
+        
+        conn = get_db_connection()
+        count = 0
+        errors = []
+        
+        for row_num, row in enumerate(reader, start=2):  # 從第2行開始（第1行是標題）
+            try:
+                staff_id = row.get('staff_id', '').strip()
+                leave_type = row.get('leave_type', '').strip()
+                start_date = row.get('start_date', '').strip()
+                end_date = row.get('end_date', '').strip()
+                reason = row.get('reason', '').strip()
+                
+                # 驗證必要欄位
+                if not all([staff_id, leave_type, start_date, end_date]):
+                    errors.append(f'第{row_num}行：缺少必要欄位')
+                    continue
+                
+                # 驗證員工是否存在
+                staff_exists = conn.execute('SELECT COUNT(*) FROM staff WHERE staff_id = ?', (staff_id,)).fetchone()[0]
+                if not staff_exists:
+                    errors.append(f'第{row_num}行：員工編號 {staff_id} 不存在')
+                    continue
+                
+                # 驗證日期格式
+                try:
+                    start_obj = datetime.strptime(start_date, '%Y-%m-%d')
+                    end_obj = datetime.strptime(end_date, '%Y-%m-%d')
+                    if start_obj > end_obj:
+                        errors.append(f'第{row_num}行：起始日期不能大於結束日期')
+                        continue
+                except ValueError:
+                    errors.append(f'第{row_num}行：日期格式錯誤，請使用 YYYY-MM-DD 格式')
+                    continue
+                
+                # 驗證請假假別
+                valid_types = ['事假', '病假', '特休', '婚假', '喪假', '產假', '陪產假', '其他']
+                if leave_type not in valid_types:
+                    errors.append(f'第{row_num}行：無效的請假假別 {leave_type}')
+                    continue
+                
+                # 新增請假記錄
+                conn.execute('''
+                    INSERT INTO leave_schedule 
+                    (staff_id, leave_type, start_date, end_date, reason, approved, operator_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (staff_id, leave_type, start_date, end_date, reason, True,
+                      session.get('username', 'system'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                count += 1
+            except Exception as e:
+                errors.append(f'第{row_num}行：{str(e)}')
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        if count > 0:
+            flash(f'成功匯入 {count} 筆請假記錄', 'success')
+        if errors:
+            flash(f'匯入過程中發生 {len(errors)} 個錯誤：' + '; '.join(errors[:5]), 'warning')
+            
+    except Exception as e:
+        flash(f'檔案讀取失敗：{str(e)}', 'danger')
+    
+    return redirect(url_for('leave_manage'))
 
 @app.route('/export_staff_schedule_table', methods=['POST'])
 @login_required

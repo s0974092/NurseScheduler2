@@ -126,4 +126,7 @@ logs/
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+
+# 個人筆記與規劃文件
+未來商務推展與待修改項目.md 

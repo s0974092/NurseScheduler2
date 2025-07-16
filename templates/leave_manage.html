@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>請假管理 - 護理人員排班系統</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #fff0f6; }
+        h2, h5, h6 { color: #d72660; }
+        .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-info, .btn-secondary {
+            border: none;
+        }
+        .btn-primary { background: #ffb6d5; color: #d72660; }
+        .btn-primary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-success { background: #ffd6e0; color: #d72660; }
+        .btn-success:hover { background: #ffb6d5; color: #d72660; }
+        .btn-warning { background: #ffe0f0; color: #d72660; }
+        .btn-warning:hover { background: #ffd6e0; color: #d72660; }
+        .btn-danger { background: #ffb6b6; color: #d72660; }
+        .btn-danger:hover { background: #ffb6d5; color: #d72660; }
+        .btn-info { background: #ffd6e0; color: #d72660; }
+        .btn-info:hover { background: #ffb6d5; color: #d72660; }
+        .btn-secondary { background: #f8bbd0; color: #d72660; }
+        .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
+        .btn-outline-primary { color: #d72660; border-color: #ffb6d5; }
+        .btn-outline-primary:hover { background: #ffd6e0; color: #d72660; border-color: #ffd6e0; }
+        .btn-outline-secondary { color: #d72660; border-color: #f8bbd0; }
+        .btn-outline-secondary:hover { background: #f8bbd0; color: #d72660; border-color: #f8bbd0; }
+        .btn-outline-warning { color: #d72660; border-color: #ffe0f0; }
+        .btn-outline-warning:hover { background: #ffe0f0; color: #d72660; border-color: #ffe0f0; }
+        .btn-outline-danger { color: #d72660; border-color: #ffb6b6; }
+        .btn-outline-danger:hover { background: #ffb6b6; color: #d72660; border-color: #ffb6b6; }
+        .modal-content { background: #fffafd; }
+        .table-bordered th, .table-bordered td { background: #fffafd; }
+        .card { background: #fffafd; border: 1px solid #ffb6d5; }
+        .card-header { background: #ffd6e0; color: #d72660; border-bottom: 1px solid #ffb6d5; }
+        .alert-info { background: #fffafd; border-color: #ffb6d5; color: #d72660; }
+        .text-primary { color: #d72660 !important; }
+        .leave-approved { background-color: #d4edda; }
+        .leave-pending { background-color: #fff3cd; }
+        .leave-denied { background-color: #f8d7da; }
+        .badge.bg-info { background-color: #ffd6e0 !important; color: #d72660; }
+        .badge.bg-success { background-color: #d4edda !important; color: #2e7d32; }
+        .badge.bg-warning { background-color: #fff3cd !important; color: #d72660; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>
+                        <i class="bi bi-calendar-x me-2"></i>請假管理
+                    </h2>
+                    <div>
+                        <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#addLeaveModal">
+                            <i class="bi bi-plus-circle"></i> 新增請假
+                        </button>
+                        <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                            <i class="bi bi-upload"></i> 批次上傳
+                        </button>
+                        <a href="{{ url_for('download_leave_template') }}" class="btn btn-outline-primary me-2">
+                            <i class="bi bi-download"></i> 下載模板
+                        </a>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                            <i class="bi bi-house"></i> 回首頁
+                        </a>
+                    </div>
+                </div>
+
+                <!-- 查詢表單 -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-search"></i> 查詢條件
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" action="{{ url_for('leave_manage') }}">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <label for="start_date" class="form-label">起始日期</label>
+                                    <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="end_date" class="form-label">結束日期</label>
+                                    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="staff_filter" class="form-label">員工篩選</label>
+                                    <select class="form-select" id="staff_filter" name="staff_filter">
+                                        <option value="">全部員工</option>
+                                        {% for staff in staff_list %}
+                                            <option value="{{ staff.staff_id }}" 
+                                                {% if staff.staff_id == staff_filter %}selected{% endif %}>
+                                                {{ staff.staff_id }} - {{ staff.name }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="leave_type_filter" class="form-label">假別篩選</label>
+                                    <select class="form-select" id="leave_type_filter" name="leave_type_filter">
+                                        <option value="">全部假別</option>
+                                        {% for leave_type in leave_types %}
+                                            <option value="{{ leave_type }}" 
+                                                {% if leave_type == leave_type_filter %}selected{% endif %}>
+                                                {{ leave_type }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-primary me-2">
+                                        <i class="bi bi-search"></i> 查詢
+                                    </button>
+                                    <a href="{{ url_for('leave_manage') }}" class="btn btn-outline-secondary">
+                                        <i class="bi bi-arrow-clockwise"></i> 重置
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 請假列表 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-list-ul"></i> 請假記錄列表 
+                            <small class="text-muted">(共 {{ leaves|length }} 筆)</small>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if leaves %}
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>員工編號</th>
+                                            <th>員工姓名</th>
+                                            <th>假別</th>
+                                            <th>起始日期</th>
+                                            <th>結束日期</th>
+                                            <th>天數</th>
+                                            <th>請假原因</th>
+                                            <th>狀態</th>
+                                            <th>建立時間</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for leave in leaves %}
+                                            <tr class="{% if leave.approved %}leave-approved{% else %}leave-pending{% endif %}">
+                                                <td>{{ leave.staff_id }}</td>
+                                                <td>{{ leave.staff_name }}</td>
+                                                <td>
+                                                    <span class="badge bg-info">{{ leave.leave_type }}</span>
+                                                </td>
+                                                <td>{{ leave.start_date }}</td>
+                                                <td>{{ leave.end_date }}</td>
+                                                <td class="text-center">{{ leave.leave_days }}</td>
+                                                <td>{{ leave.reason or '-' }}</td>
+                                                <td>
+                                                    {% if leave.approved %}
+                                                        <span class="badge bg-success">已核准</span>
+                                                    {% else %}
+                                                        <span class="badge bg-warning">待審核</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ leave.created_at[:16] }}</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-warning me-1" 
+                                                            onclick="editLeave({{ leave.id }}, {{ leave.staff_id|tojson }}, {{ leave.leave_type|tojson }}, {{ leave.start_date|tojson }}, {{ leave.end_date|tojson }}, {{ (leave.reason or '')|tojson }}, {{ leave.approved|tojson }})"
+                                                            data-bs-toggle="modal" data-bs-target="#editLeaveModal">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <form method="POST" action="{{ url_for('delete_leave') }}" 
+                                                          style="display: inline;" 
+                                                          onsubmit="return confirm('確定要刪除這筆請假記錄嗎？')">
+                                                        <input type="hidden" name="leave_id" value="{{ leave.id }}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                                <p class="text-muted mt-3">查詢條件下沒有找到請假記錄</p>
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addLeaveModal">
+                                    <i class="bi bi-plus-circle"></i> 新增第一筆請假記錄
+                                </button>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增請假 Modal -->
+    <div class="modal fade" id="addLeaveModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle"></i> 新增請假記錄
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('add_leave') }}">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="add_staff_id" class="form-label">員工 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="add_staff_id" name="staff_id" required>
+                                <option value="">請選擇員工</option>
+                                {% for staff in staff_list %}
+                                    <option value="{{ staff.staff_id }}">{{ staff.staff_id }} - {{ staff.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="add_leave_type" class="form-label">假別 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="add_leave_type" name="leave_type" required>
+                                <option value="">請選擇假別</option>
+                                {% for leave_type in leave_types %}
+                                    <option value="{{ leave_type }}">{{ leave_type }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="add_start_date" class="form-label">起始日期 <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="add_start_date" name="start_date" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="add_end_date" class="form-label">結束日期 <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="add_end_date" name="end_date" required>
+                            </div>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label for="add_reason" class="form-label">請假原因</label>
+                            <textarea class="form-control" id="add_reason" name="reason" rows="3" placeholder="請輸入請假原因（可選）"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="add_approved" name="approved" value="1" checked>
+                                <label class="form-check-label" for="add_approved">
+                                    立即核准
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> 新增請假
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編輯請假 Modal -->
+    <div class="modal fade" id="editLeaveModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil"></i> 編輯請假記錄
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('edit_leave') }}">
+                    <input type="hidden" id="edit_leave_id" name="leave_id">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="edit_staff_id" class="form-label">員工 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_staff_id" name="staff_id" required>
+                                <option value="">請選擇員工</option>
+                                {% for staff in staff_list %}
+                                    <option value="{{ staff.staff_id }}">{{ staff.staff_id }} - {{ staff.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_leave_type" class="form-label">假別 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_leave_type" name="leave_type" required>
+                                <option value="">請選擇假別</option>
+                                {% for leave_type in leave_types %}
+                                    <option value="{{ leave_type }}">{{ leave_type }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="edit_start_date" class="form-label">起始日期 <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="edit_start_date" name="start_date" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="edit_end_date" class="form-label">結束日期 <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="edit_end_date" name="end_date" required>
+                            </div>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label for="edit_reason" class="form-label">請假原因</label>
+                            <textarea class="form-control" id="edit_reason" name="reason" rows="3" placeholder="請輸入請假原因（可選）"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit_approved" name="approved" value="1">
+                                <label class="form-check-label" for="edit_approved">
+                                    已核准
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-save"></i> 更新請假
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批次上傳 Modal -->
+    <div class="modal fade" id="uploadModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-upload"></i> 批次上傳請假資料
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('upload_leave') }}" enctype="multipart/form-data">
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-info-circle"></i> 上傳說明：</h6>
+                            <ul class="mb-0">
+                                <li>檔案格式：CSV（UTF-8編碼）</li>
+                                <li>必要欄位：staff_id, leave_type, start_date, end_date</li>
+                                <li>可選欄位：reason</li>
+                                <li>日期格式：YYYY-MM-DD（例：2024-07-01）</li>
+                                <li>假別選項：事假、病假、特休、婚假、喪假、產假、陪產假、其他</li>
+                                <li>員工編號必須已存在於系統中</li>
+                            </ul>
+                        </div>
+                        <div class="mb-3">
+                            <label for="upload_file" class="form-label">選擇 CSV 檔案 <span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" id="upload_file" name="file" accept=".csv" required>
+                        </div>
+                        <div class="mb-3">
+                            <a href="{{ url_for('download_leave_template') }}" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-download"></i> 下載範例模板
+                            </a>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-info">
+                            <i class="bi bi-upload"></i> 開始上傳
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                {% for category, message in messages %}
+                    <div class="toast show" role="alert">
+                        <div class="toast-header">
+                            <strong class="me-auto">
+                                {% if category == 'success' %}
+                                    <i class="bi bi-check-circle text-success"></i> 成功
+                                {% elif category == 'danger' %}
+                                    <i class="bi bi-exclamation-triangle text-danger"></i> 錯誤
+                                {% elif category == 'warning' %}
+                                    <i class="bi bi-exclamation-triangle text-warning"></i> 警告
+                                {% else %}
+                                    <i class="bi bi-info-circle text-info"></i> 訊息
+                                {% endif %}
+                            </strong>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                        </div>
+                        <div class="toast-body">{{ message }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 編輯請假記錄
+        function editLeave(id, staffId, leaveType, startDate, endDate, reason, approved) {
+            document.getElementById('edit_leave_id').value = id;
+            document.getElementById('edit_staff_id').value = staffId;
+            document.getElementById('edit_leave_type').value = leaveType;
+            document.getElementById('edit_start_date').value = startDate;
+            document.getElementById('edit_end_date').value = endDate;
+            document.getElementById('edit_reason').value = reason || '';
+            document.getElementById('edit_approved').checked = approved;
+        }
+
+        // 日期驗證
+        document.addEventListener('DOMContentLoaded', function() {
+            // 新增表單日期驗證
+            const addStartDate = document.getElementById('add_start_date');
+            const addEndDate = document.getElementById('add_end_date');
+            
+            addStartDate.addEventListener('change', function() {
+                addEndDate.min = this.value;
+                if (addEndDate.value && addEndDate.value < this.value) {
+                    addEndDate.value = this.value;
+                }
+            });
+            
+            // 編輯表單日期驗證
+            const editStartDate = document.getElementById('edit_start_date');
+            const editEndDate = document.getElementById('edit_end_date');
+            
+            editStartDate.addEventListener('change', function() {
+                editEndDate.min = this.value;
+                if (editEndDate.value && editEndDate.value < this.value) {
+                    editEndDate.value = this.value;
+                }
+            });
+
+            // 自動隱藏 toast 訊息
+            const toasts = document.querySelectorAll('.toast');
+            toasts.forEach(toast => {
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 5000);
+            });
+        });
+    </script>
+</body>
+</html> 
