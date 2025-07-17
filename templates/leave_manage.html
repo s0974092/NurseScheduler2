@@ -146,7 +146,7 @@
                                             <th>假別</th>
                                             <th>起始日期</th>
                                             <th>結束日期</th>
-                                            <th>天數</th>
+                                            <th>天數詳情</th>
                                             <th>請假原因</th>
                                             <th>狀態</th>
                                             <th>建立時間</th>
@@ -163,7 +163,14 @@
                                                 </td>
                                                 <td>{{ leave.start_date }}</td>
                                                 <td>{{ leave.end_date }}</td>
-                                                <td class="text-center">{{ leave.leave_days }}</td>
+                                                <td class="text-center">
+                                                    <span class="fw-bold text-primary">{{ leave.leave_days }}</span> 天
+                                                    {% if leave.sunday_count > 0 %}
+                                                        <br><small class="text-muted">
+                                                            (總 {{ leave.total_days }} 天，含 {{ leave.sunday_count }} 個星期天)
+                                                        </small>
+                                                    {% endif %}
+                                                </td>
                                                 <td>{{ leave.reason or '-' }}</td>
                                                 <td>
                                                     {% if leave.approved %}
@@ -248,7 +255,23 @@
                                 <input type="date" class="form-control" id="add_end_date" name="end_date" required>
                             </div>
                         </div>
-                        <div class="mb-3 mt-3">
+                        
+                        <!-- 請假天數計算說明 -->
+                        <div class="alert alert-info mb-3">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-info-circle me-2 mt-1"></i>
+                                <div>
+                                    <strong>請假天數計算說明：</strong><br>
+                                    <small>
+                                        • 星期天為例假日，不計入請假天數<br>
+                                        • 請假期間包含星期天時，該星期天不會安排大夜班或On Call<br>
+                                        • 請假的星期天在排班表中會顯示為「例假日」
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
                             <label for="add_reason" class="form-label">請假原因</label>
                             <textarea class="form-control" id="add_reason" name="reason" rows="3" placeholder="請輸入請假原因（可選）"></textarea>
                         </div>
@@ -313,7 +336,23 @@
                                 <input type="date" class="form-control" id="edit_end_date" name="end_date" required>
                             </div>
                         </div>
-                        <div class="mb-3 mt-3">
+                        
+                        <!-- 請假天數計算說明 -->
+                        <div class="alert alert-info mb-3">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-info-circle me-2 mt-1"></i>
+                                <div>
+                                    <strong>請假天數計算說明：</strong><br>
+                                    <small>
+                                        • 星期天為例假日，不計入請假天數<br>
+                                        • 請假期間包含星期天時，該星期天不會安排大夜班或On Call<br>
+                                        • 請假的星期天在排班表中會顯示為「例假日」
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
                             <label for="edit_reason" class="form-label">請假原因</label>
                             <textarea class="form-control" id="edit_reason" name="reason" rows="3" placeholder="請輸入請假原因（可選）"></textarea>
                         </div>
@@ -358,6 +397,7 @@
                                 <li>日期格式：YYYY-MM-DD（例：2024-07-01）</li>
                                 <li>假別選項：事假、病假、特休、婚假、喪假、產假、陪產假、其他</li>
                                 <li>員工編號必須已存在於系統中</li>
+                                <li class="text-warning"><strong>請假天數計算：星期天不計入請假天數</strong></li>
                             </ul>
                         </div>
                         <div class="mb-3">

@@ -934,23 +934,35 @@ def auto_schedule():
                 current_month = date[:7]
                 oncall_counts = {}
                 for s in staff_list:
-                    count = conn.execute(
-                        'SELECT COUNT(*) FROM oncall_schedule WHERE staff_id = ? AND date LIKE ?',
-                        (s['staff_id'], f"{current_month}%")
-                    ).fetchone()[0]
-                    oncall_counts[s['staff_id']] = count
+                    # 檢查該員工是否在此星期天請假
+                    leave_check = conn.execute('''
+                        SELECT COUNT(*) FROM leave_schedule 
+                        WHERE staff_id = ? AND start_date <= ? AND end_date >= ? AND approved = 1
+                    ''', (s['staff_id'], date, date)).fetchone()[0]
+                    
+                    if leave_check == 0:  # 沒有請假才納入 On Call 候選
+                        count = conn.execute(
+                            'SELECT COUNT(*) FROM oncall_schedule WHERE staff_id = ? AND date LIKE ?',
+                            (s['staff_id'], f"{current_month}%")
+                        ).fetchone()[0]
+                        oncall_counts[s['staff_id']] = count
                 
-                # 選擇 On Call 次數最少的員工
-                min_count = min(oncall_counts.values()) if oncall_counts else 0
-                candidates = [s for s in staff_list if oncall_counts.get(s['staff_id'], 0) == min_count]
-                
-                if candidates:
-                    oncall_staff = random.choice(candidates)
-                    conn.execute(
-                        'INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
-                        (date, oncall_staff['staff_id'], 'oncall')
-                    )
-                    print(f"自動設定 {date} 星期日 On Call: {oncall_staff['name']} (本月第{min_count+1}次)")
+                # 選擇 On Call 次數最少的員工（排除請假員工）
+                if oncall_counts:
+                    min_count = min(oncall_counts.values())
+                    candidates = [s for s in staff_list if oncall_counts.get(s['staff_id'], float('inf')) == min_count]
+                    
+                    if candidates:
+                        oncall_staff = random.choice(candidates)
+                        conn.execute(
+                            'INSERT INTO oncall_schedule (date, staff_id, status) VALUES (?, ?, ?)',
+                            (date, oncall_staff['staff_id'], 'oncall')
+                        )
+                        print(f"自動設定 {date} 星期日 On Call: {oncall_staff['name']} (本月第{min_count+1}次)")
+                    else:
+                        print(f"警告：{date} 星期日無法安排 On Call，所有員工都在請假")
+                else:
+                    print(f"警告：{date} 星期日無法安排 On Call，所有員工都在請假")
 
         # 重新排序班別：大夜班優先處理（特別是有預先分配的）
         shifts_ordered = []
@@ -1750,11 +1762,39 @@ def staff_schedule_table():
         JOIN shift ON schedule.shift_id = shift.shift_id
         WHERE schedule.date BETWEEN ? AND ?
     ''', (dates[0], dates[-1])).fetchall()
+    
+    # 查詢請假記錄
+    leave_records = conn.execute('''
+        SELECT staff_id, start_date, end_date, leave_type
+        FROM leave_schedule
+        WHERE approved = 1 AND 
+              ((start_date <= ? AND end_date >= ?) OR 
+               (start_date >= ? AND start_date <= ?) OR
+               (end_date >= ? AND end_date <= ?))
+    ''', (dates[-1], dates[0], dates[0], dates[-1], dates[0], dates[-1])).fetchall()
+    
     conn.close()
     
     schedule_map = {}
     for row in schedule:
         schedule_map.setdefault(row['staff_id'], {})[row['date']] = row['shift_name']
+    
+    # 建立請假對照表
+    leave_map = {}
+    for leave in leave_records:
+        staff_id = leave['staff_id']
+        start_date_obj = datetime.strptime(leave['start_date'], '%Y-%m-%d')
+        end_date_obj = datetime.strptime(leave['end_date'], '%Y-%m-%d')
+        
+        # 為請假期間的每一天建立記錄
+        current_date = start_date_obj
+        while current_date <= end_date_obj:
+            date_str = current_date.strftime('%Y-%m-%d')
+            if date_str in dates:  # 只處理在查詢範圍內的日期
+                if staff_id not in leave_map:
+                    leave_map[staff_id] = {}
+                leave_map[staff_id][date_str] = leave['leave_type']
+            current_date += timedelta(days=1)
     
     table = []
     for staff in staff_list:
@@ -1767,9 +1807,26 @@ def staff_schedule_table():
         }
         for d in dates:
             shift = schedule_map.get(staff['staff_id'], {}).get(d, '')
-            row['shifts'].append(shift)
+            # 檢查是否有請假記錄
+            leave_type = leave_map.get(staff['staff_id'], {}).get(d, '')
+            # 檢查是否為星期天
+            date_obj = datetime.strptime(d, '%Y-%m-%d')
+            is_sunday = date_obj.weekday() == 6
+            
             if shift:
+                row['shifts'].append(shift)
                 row['total_hours'] += 8
+            elif leave_type:
+                # 有請假記錄
+                if is_sunday:
+                    # 請假的星期天顯示為例假日
+                    row['shifts'].append('')  # 空字串讓前端判斷為例假日
+                else:
+                    # 平日請假顯示為其他排休
+                    row['shifts'].append('其他排休')
+            else:
+                # 沒有排班也沒有請假，標記為空字串（由前端判斷顯示休息日或例假日）
+                row['shifts'].append('')
         table.append(row)
     
     # 傳遞參數給模板
@@ -2620,11 +2677,26 @@ def leave_manage():
     leaves = []
     for leave in leaves_raw:
         leave_dict = dict(leave)
-        # 計算請假天數
+        # 計算請假天數（排除星期天）
         start_date_obj = datetime.strptime(leave['start_date'], '%Y-%m-%d')
         end_date_obj = datetime.strptime(leave['end_date'], '%Y-%m-%d')
-        leave_days = (end_date_obj - start_date_obj).days + 1
+        
+        # 計算總天數
+        total_days = (end_date_obj - start_date_obj).days + 1
+        
+        # 計算期間內的星期天數量
+        sunday_count = 0
+        current_date = start_date_obj
+        while current_date <= end_date_obj:
+            if current_date.weekday() == 6:  # 星期天
+                sunday_count += 1
+            current_date += timedelta(days=1)
+        
+        # 實際請假天數 = 總天數 - 星期天數量
+        leave_days = total_days - sunday_count
         leave_dict['leave_days'] = leave_days
+        leave_dict['total_days'] = total_days
+        leave_dict['sunday_count'] = sunday_count
         leaves.append(leave_dict)
     
     # 取得員工清單
@@ -2867,6 +2939,7 @@ def export_staff_schedule_table():
         '大夜班': request.form.get('night_shift_code', '').strip(),
         '例假日': request.form.get('holiday_code', '').strip(),
         '休息日': request.form.get('rest_day_code', '').strip(),
+        '其他排休': request.form.get('leave_code', '').strip(),
         '': request.form.get('empty_code', '').strip(),  # 空白替代
     }
     
@@ -2917,11 +2990,39 @@ def export_staff_schedule_table():
         JOIN shift ON schedule.shift_id = shift.shift_id
         WHERE schedule.date BETWEEN ? AND ?
     ''', (dates[0], dates[-1])).fetchall()
+    
+    # 查詢請假記錄（與staff_schedule_table相同邏輯）
+    leave_records = conn.execute('''
+        SELECT staff_id, start_date, end_date, leave_type
+        FROM leave_schedule
+        WHERE approved = 1 AND 
+              ((start_date <= ? AND end_date >= ?) OR 
+               (start_date >= ? AND start_date <= ?) OR
+               (end_date >= ? AND end_date <= ?))
+    ''', (dates[-1], dates[0], dates[0], dates[-1], dates[0], dates[-1])).fetchall()
+    
     conn.close()
     
     schedule_map = {}
     for row in schedule:
         schedule_map.setdefault(row['staff_id'], {})[row['date']] = row['shift_name']
+    
+    # 建立請假對照表
+    leave_map = {}
+    for leave in leave_records:
+        staff_id = leave['staff_id']
+        start_date_obj = datetime.strptime(leave['start_date'], '%Y-%m-%d')
+        end_date_obj = datetime.strptime(leave['end_date'], '%Y-%m-%d')
+        
+        # 為請假期間的每一天建立記錄
+        current_date = start_date_obj
+        while current_date <= end_date_obj:
+            date_str = current_date.strftime('%Y-%m-%d')
+            if date_str in dates:  # 只處理在查詢範圍內的日期
+                if staff_id not in leave_map:
+                    leave_map[staff_id] = {}
+                leave_map[staff_id][date_str] = leave['leave_type']
+            current_date += timedelta(days=1)
     
     # 建立 CSV 內容
     si = StringIO()
@@ -2943,11 +3044,23 @@ def export_staff_schedule_table():
         shifts_data = []
         for i, d in enumerate(dates):
             shift = schedule_map.get(staff['staff_id'], {}).get(d, '')
+            leave_type = leave_map.get(staff['staff_id'], {}).get(d, '')
+            
             if shift:
-                # 套用替代代碼
+                # 有排班
                 processed_shift = apply_replacement(shift)
                 shifts_data.append(processed_shift)
                 total_hours += 8
+            elif leave_type:
+                # 有請假記錄
+                if weekdays[i] == '日':
+                    # 請假的星期天顯示為例假日
+                    processed_text = apply_replacement('例假日')
+                    shifts_data.append(processed_text)
+                else:
+                    # 平日請假顯示為其他排休
+                    processed_text = apply_replacement('其他排休')
+                    shifts_data.append(processed_text)
             else:
                 # 根據星期判斷是例假日還是休息日
                 if weekdays[i] == '日':

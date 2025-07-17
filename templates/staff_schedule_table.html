@@ -15,6 +15,7 @@
         .shift-morning { background-color: #ffe4b2 !important; }  /* 早班-淡橘 */
         .shift-evening { background-color: #b2d8ff !important; }  /* 小夜班-淡藍 */
         .shift-night   { background-color: #d1b2ff !important; }  /* 大夜班-淡紫 */
+        .shift-leave   { background-color: #f5f5f5 !important; color: #666666; font-weight: bold; }  /* 其他排休-灰白色 */
         .btn-secondary { background: #f8bbd0; color: #d72660; border: none; }
         .btn-secondary:hover { background: #ffd6e0; color: #d72660; }
         .btn-primary { background: #d72660; border-color: #d72660; }
@@ -98,11 +99,14 @@
                                 {% if shift == '早班' %} shift-morning
                                 {% elif shift == '小夜班' %} shift-evening
                                 {% elif shift == '大夜班' %} shift-night
+                                {% elif shift == '其他排休' %} shift-leave
                                 {% elif not shift and loop.index0 is not none and weekdays[loop.index0] == '日' %} shift-holiday
                                 {% elif not shift and loop.index0 is not none and weekdays[loop.index0] == '六' %} shift-rest
                                 {% elif not shift %} shift-rest
                                 {% endif %}">
-                                {% if shift %}
+                                {% if shift == '其他排休' %}
+                                    其他排休
+                                {% elif shift %}
                                     {{ shift }}
                                 {% elif weekdays[loop.index0] == '日' %}
                                     例假日
@@ -164,15 +168,19 @@
                     <div class="replacement-group">
                         <h6><i class="bi bi-calendar-x me-1"></i>休假替代代碼</h6>
                         <div class="row">
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label class="form-label">例假日 → </label>
                                 <input type="text" name="holiday_code" class="form-control" placeholder="例如：H (留空則不替換)">
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label class="form-label">休息日 → </label>
                                 <input type="text" name="rest_day_code" class="form-control" placeholder="例如：R (留空則不替換)">
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
+                                <label class="form-label">其他排休 → </label>
+                                <input type="text" name="leave_code" class="form-control" placeholder="例如：L (留空則不替換)">
+                            </div>
+                            <div class="col-md-3">
                                 <label class="form-label">空白 → </label>
                                 <input type="text" name="empty_code" class="form-control" placeholder="例如：- (留空則不替換)">
                             </div>
